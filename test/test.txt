@@ -1,1 +1,2 @@
 this is test for merge request between branch master and zxu
+this is a test for remote repo name changing
