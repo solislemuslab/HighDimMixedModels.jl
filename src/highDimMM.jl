@@ -1,6 +1,4 @@
-module HighDimMixedModels
-
-# Write your package code here.
+module highDimMM
 
 #using MixedModels: modelmatrix
 using Base: Float64, AbstractVecOrTuple
