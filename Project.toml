@@ -3,6 +3,14 @@ uuid = "ced58d7a-d58c-464d-86d9-3a8462bebd28"
 authors = ["Zhuoyan Xu", "Claudia Solís-Lemus"]
 version = "0.1.0"
 
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MixedModels = "ff71e718-51f3-5ec2-a782-8ffcbfa3c316"
+NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
+StableRNGs = "860ef19b-820b-49d6-a774-d7a799459cd3"
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
+
 [compat]
 julia = "1"
 
