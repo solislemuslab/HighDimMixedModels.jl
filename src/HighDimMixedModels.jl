@@ -13,14 +13,15 @@ using MixedModels
 using NLopt
 
 import Base: *
+import MixedModels: fit, fit!
 
-abstract type MixedModel{T} <: StatsModels.RegressionModel end # model with fixed and random effects
+# abstract type MixedModel{T} <: StatsModels.RegressionModel end # model with fixed and random effects
 
 include("bricks.jl")
 #include("bricks_Number.jl")
 
 
-export highDimMixedModel, modelmatrix, fit
+export highDimMixedModel, modelmatrix, fit, fit!
 
 
 end
