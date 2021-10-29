@@ -209,6 +209,9 @@ end
     highDimMixedModel(...)
    Private constructor for a highDimMixedModel.
 To construct a model, you only need the formula (`f`), data(`df`), contrasts and names of columns of M,X,Z
+
+!!! note
+    This method requires the order of terms in formula corresponds to the order of names in df
 """
 function highDimMixedModel(
     f::FormulaTerm,
@@ -235,6 +238,11 @@ function highDimMixedModel(
     y, pred = modelcols(form, df);
     terms = form.rhs.terms
 
+    if(typeof(form.rhs.terms[1]) <: InterceptTerm)
+        ### This line is due to 0 intercept term in formula
+        terms = terms[2:length(terms)]
+    end
+
     ## get id by names
     namesOfVar = names(df)[2:length(names(df))] ## extract variable names
     if typeof(nameOfHDM) == String idOfHDM = findall(x -> x == nameOfHDM, namesOfVar)
@@ -252,6 +260,52 @@ function highDimMixedModel(
     #preTerms = Vector(1:length(form.rhs.terms))
     #idOfReMat = preTerms[preTerms .∉ Ref(vcat(idOfHDM, idOfXmat))]
     Z = ReMat(modelmatrix(terms[idOfReMat],df))
+
+    return highDimMixedModel{Float64}(form, M, X, Z, y, nothing)
+
+end
+
+"""
+    highDimMixedModel(...)
+   Private constructor for a highDimMixedModel.
+To construct a model, you only need the formula (`f`), data(`df`), names of columns of M,X,
+this function utilize the apply_schema() from MixedModel, so it can parse the y ~ 0 + a + b + (1|c) as mixed model
+The modelcols/modelmatrix in StatsModels.jl cannot parse (1|c), need more info to distinguish between matrix M and X
+    
+!!! note
+    This method requires the order of terms in formula corresponds to the order of names in df
+"""
+function highDimMixedModel(
+    f::FormulaTerm,
+    df::DataFrame,
+    numOfHDM::Int64,
+    #numOfXMat::Int64
+) where {T} 
+    """
+    for i in 1:size(df,2)
+        if(eltype(df[:,i]) == Int64)
+            df[!,i] = convert(Vector{Float64},df[:,i])
+        end
+    end
+    """
+    for i in 1:size(df,2)
+        if(isa(df[1,i], Number))
+            df[!,i] = convert(Vector{Float64},df[:,i])
+        end
+    end
+
+    ## below utilize apply_schema() from MixedModel, the reason to keep above is we still need variable names 
+    ##to identify M and X
+    ## use apply_schema to get random effect matrix
+    sch = schema(df)
+    form = apply_schema(f, sch, highDimMixedModel)
+    #preTerms = Vector(1:length(form.rhs.terms))
+    #idOfReMat = preTerms[preTerms .∉ Ref(vcat(idOfHDM, idOfXmat))]
+    y, pre = modelcols(form,df)
+    FixedEffectMatrix,ZMatrix = pre  #modelmatrix(form,df)
+    M = highDimMat(FixedEffectMatrix[:,1:numOfHDM])
+    X = XMat(FixedEffectMatrix[:, (numOfHDM + 1):size(FixedEffectMatrix,2)])
+    Z = ReMat(ZMatrix)
 
     return highDimMixedModel{Float64}(form, M, X, Z, y, nothing)
 
