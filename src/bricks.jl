@@ -360,7 +360,7 @@ function fit!(HMM::highDimMixedModel{T}; verbose::Bool=true, REML::Bool=true, al
     sigma = [1.0,1.0]
     lbd = [0.0; 0.0]
     optsum = OptSummary(Float64.(sigma), lbd, alg; ftol_rel=T(1.0e-12), ftol_abs=T(1.0e-8), xtol_rel = 1e-5)
-    optsum.REML = true
+    optsum.REML = REML
     
     ## init opt based on optsum
     opt = Opt(optsum)
@@ -368,7 +368,7 @@ function fit!(HMM::highDimMixedModel{T}; verbose::Bool=true, REML::Bool=true, al
     function negLogLik(sigma::Vector{Float64}, g::Vector{Float64})
         n = length(y)
         Sigma = sigma[1]*Z*transpose(Z) + sigma[2]*diagm(ones(n))
-        negLog = -1/2*log(det(K*Sigma*transpose(K))) - 1/2*transpose(y)*transpose(K)*inv(K*Sigma*transpose(K))*K*y
+        negLog = 1/2*log(det(K*Sigma*transpose(K))) + 1/2*transpose(y)*transpose(K)*inv(K*Sigma*transpose(K))*K*y
         #println("OPT: parameter $(sigma) || objective eval $(negLog)")
         @show sigma
         @show negLog

@@ -21,7 +21,13 @@ include("bricks.jl")
 #include("bricks_Number.jl")
 
 
-export highDimMixedModel, modelmatrix, fit, fit!
+export highDimMixedModel, 
+    modelmatrix, 
+    fit, 
+    fit!,
+    highDimMat,
+    XMat,
+    ReMat
 
 
 end
