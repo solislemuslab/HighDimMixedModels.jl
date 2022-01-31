@@ -11,6 +11,7 @@ using LinearAlgebra
 using DataFrames
 using MixedModels
 using NLopt
+using CategoricalArrays
 
 import Base: *
 import MixedModels: fit, fit!
