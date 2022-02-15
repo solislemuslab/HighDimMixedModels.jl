@@ -136,9 +136,15 @@ mutable struct highDimMixedModel{T<:AbstractFloat}  <: MixedModel{T}
 end
 
 
-"""
+""" (1)
     highDimMixedModel
 dealing with the number of columns in M and X scenario, assume intercept alwalys exists (@formula: y ~ 1 + ... )
+# @ numOfHDM: number of HDM variables
+# @ numOfHDM: number of X variables
+
+This function assumes the variables in dataframe is arranged in order HDM, X , Z(ReMat).
+ The issue here is matrix of random effect is without intercept (set to zero constrain)
+
 """
 function highDimMixedModel(
     f::FormulaTerm,
@@ -147,6 +153,11 @@ function highDimMixedModel(
     numOfHDM::Int64,
     numOfXMat::Int64
 ) where{T}
+    for i in 1:size(df,2)
+        if(isa(df[1,i], Number))
+            df[!,i] = convert(Vector{Float64},df[:,i])
+        end
+    end
     sch = schema(df,contrasts)
     form = apply_schema(f, sch)
     y, pred = modelcols(form, df);
@@ -161,11 +172,20 @@ function highDimMixedModel(
 end
 
 
-"""
+""" (2)
     highDimMixedModel(...)
    Private constructor for a highDimMixedModel.
 To construct a model, you only need the formula (`f`), data(`df`), contrasts and indices of M,X,Z
+
+# the ID given here must be coincide with the ID in formula
+# The issue here is matrix of random effect is without intercept (set to zero constrain)
+
+# @ idOfHDM: id of variables corresponding to matrix M, NOTE: it's the ID in hte formula! # [1,2]
+# @ idOfXMat: same as before
+# @ idOfReMat: same as before
 """
+
+
 
 """ not useful right now
 private help function for select indices for remaining random effect matrix
@@ -186,7 +206,7 @@ function highDimMixedModel(
     idOfReMat::Union{Int,AbstractArray{Int64,1}}
 ) where {T} 
     for i in 1:size(df,2)
-        if(eltype(df[:,i]) == Int64)
+        if(isa(df[1,i], Number))
             df[!,i] = convert(Vector{Float64},df[:,i])
         end
     end
@@ -205,7 +225,7 @@ function highDimMixedModel(
 
 end
 
-"""
+""" (3)
     highDimMixedModel(...)
    Private constructor for a highDimMixedModel.
 To construct a model, you only need the formula (`f`), data(`df`), contrasts and names of columns of M,X,Z
@@ -265,7 +285,7 @@ function highDimMixedModel(
 
 end
 
-"""
+""" (4)
     highDimMixedModel(...)
    Private constructor for a highDimMixedModel.
 To construct a model, you only need the formula (`f`), data(`df`), names of columns of M,X,
@@ -295,7 +315,7 @@ function highDimMixedModel(
     end
 
     ## below utilize apply_schema() from MixedModel, the reason to keep above is we still need variable names 
-    ##to identify M and X
+    ## to identify M and X
     ## use apply_schema to get random effect matrix
     sch = schema(df)
     form = apply_schema(f, sch, highDimMixedModel)
@@ -310,6 +330,66 @@ function highDimMixedModel(
     return highDimMixedModel{Float64}(form, M, X, Z, y, nothing)
 
 end
+
+
+
+""" (5)
+    highDimMixedModel(...)
+   Private constructor for a highDimMixedModel.
+   This function is a generalization of constructor when we have high dimensional data, in this setting, we won't need formula(since it's too long),
+        we will need id of each random variable, then we will directly use id of variable of M and X make the matrix M and X, 
+        use tricks in (4) to make Z
+    
+
+# the ID given here must be coincide with the ID in formula
+# The issue in (1) is matrix of random effect is without intercept (set to zero constrain), we try to tackle it here using tricks in (4)
+
+# @ nameOfy: the variable name of response for constructing formula # ["a", "b"]
+# @ idOfReMat: same as before
+
+# @ idOfHDM: id of variables corresponding to matrix M, NOTE: it's the ID in the df! # [1,2]
+# @ idOfXMat: same as before
+
+"""
+
+function highDimMixedModel(
+    df::DataFrame,
+    nameOfy::Union{AbstractString,AbstractArray{<:AbstractString,1}}, # ["a", "b"]
+    nameOfReMat::Union{AbstractString,AbstractArray{<:AbstractString,1}},
+    idOfHDM::Union{Int,AbstractArray{Int64,1}}, # [1,2]
+    idOfXMat::Union{Int,AbstractArray{Int64,1}},
+    #contrasts = Dict(term(nameOfReMat) => CategoricalTerm)
+) where {T} 
+    for i in 1:size(df,2)
+        if(isa(df[1,i], Number))
+            df[!,i] = convert(Vector{Float64},df[:,i])
+        end
+    end
+    
+    M = highDimMat(Matrix(df[:,idOfHDM]))
+    X = XMat(Matrix(df[:,idOfXMat]))
+
+    # The function doesn't need formula to construct M and X, so the formula constucted here is only for extracting Z, 
+    # doesn't matter we have intercept or not
+    # need to transfer nameOfy and nameOfReMat to term due to error: KeyError: key nameOfReMat not found
+    # https://juliastats.org/StatsModels.jl/stable/api/#StatsModels.term
+    # need to transform nameOfReMat from string to categorical ? 
+
+    #transform!(df, :trt => categorical, renamecols=false) # this is need to avoid error in term(nameOfReMat)
+    f = @formula(term(nameOfy) ~ (1|term(nameOfReMat)))
+    print(nameOfy)
+    #sch = schema(df, contrasts)
+    sch = schema(df)
+    form = apply_schema(f, sch, highDimMixedModel)
+    
+    y, pre = modelcols(form,df)
+    FixedEffectMatrix,ZMatrix = pre 
+    Z = ReMat(ZMatrix)
+
+    return highDimMixedModel{Float64}(form, M, X, Z, y, nothing)
+
+end
+
 
 ##==============##==============##==============##==============##==============##==============##==============##==============##==============##==============##==============
 # fit
@@ -327,11 +407,7 @@ function fit(
     idOfReMat::Union{Int,AbstractArray{Int64,1}}
 ) return fit!(highDimMixedModel(f, df, contrasts, idOfHDM, idOfXMat, idOfReMat), progress, REML)
 end
-    
-
 """
-
-
 function fit(
     HMM::highDimMixedModel{T};
     verbose::Bool=true,
@@ -357,9 +433,9 @@ function fit!(HMM::highDimMixedModel{T}; verbose::Bool=true, REML::Bool=true, al
 
     ## add optsum
     # init para
-    sigma = [1.0,1.0]
+    sigma = [2200.0,14.0]
     lbd = [0.0; 0.0]
-    optsum = OptSummary(Float64.(sigma), lbd, alg; ftol_rel=T(1.0e-12), ftol_abs=T(1.0e-8), xtol_rel = 1e-5)
+    optsum = OptSummary(Float64.(sigma), lbd, alg; ftol_rel=T(1.0e-15), ftol_abs=T(1.0e-8), xtol_rel = 1e-10)
     optsum.REML = REML
     
     ## init opt based on optsum
