@@ -1,14 +1,7 @@
-name = "HighDimMixedModels"
-uuid = "5d0d0550-ba84-42d6-a33e-4f9cf65119aa"
-authors = ["Evan Gorstein"]
-version = "0.1.0"
-
 [deps]
-InvertedIndices = "41ab1584-1d38-5bbf-9106-f11c6c58b48f"
+HighDimMixedModels = "5d0d0550-ba84-42d6-a33e-4f9cf65119aa"
 Lasso = "b4fcebef-c861-5a0f-a7e2-ba9dc32b180a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-
-[compat]
-julia = "1.6"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
