@@ -8,9 +8,10 @@ using InvertedIndices #Allows negative indexing, like in R
 
 export cov_start
 export L_ident_update
+export L_diag_update!
 
 """
-Covariance matrices of the responses
+Returns covariance matrices of the responses, by group
 
 ARGUMENTS
 - L :: Parameters for random effect covariance matrix (can be scalar, vector, or lower triangular matrix)
@@ -18,26 +19,50 @@ ARGUMENTS
 - σ² :: Variance of error
 
 OUTPUT
-- invVgrp :: List of length the number of groups, each of whose elements is the inverse covariance matrix of the responses within a group
+- Vgrp :: List of length the number of groups, each of whose elements is the covariance matrix of the responses within a group
 """
-function invV(L, Zgrp, σ²)
+function Vgrp(L, Zgrp, σ²)
     q = size(Zgrp[1])[2]
 
     if length(L) == 1
-        Ψ = L[1]^2
+        Ψ = (L^2)I(q)
     elseif isa(L, Vector) && length(L) == q 
         Ψ = Diagonal(L.^2)
     else
-        ϕ = L*L' 
+        Ψ = L*L' 
     end
     
-    invVgrp = Matrix[]
+    Vgrp = Matrix[]
     for Zᵢ in Zgrp
         nᵢ = size(Zᵢ)[1]
-        push!(invVgrp, inv(Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ))) #Should we check singularity? Not sure
+        push!(Vgrp, Symmetric(Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ))) #Symmetric used to adjust for floating point error 
     end
-    return invVgrp 
+    return Vgrp 
 end
+
+
+"""
+Calculates residuals (list of residuals for each group) 
+"""
+function resid(Xgrp, ygrp, β, active_set = 1:length(β))
+    Xactgrp = map(X -> X[:,active_set], Xgrp)
+    residgrp = ygrp .- Xactgrp.*[β[active_set]]
+    return residgrp
+end
+
+"""
+Calculates x'M⁻¹x, where M is psd symmetric matrix
+"""
+quad_form_inv(M, x) = dot(x, cholesky(M)\x) 
+#M will be one of the elements of Vgrp, so it should be pd
+#We should probably implement a check for this, though 
+
+"""
+Calculates x'M⁻¹y, where M is psd symmetric matrix
+"""
+quad_form_inv2(M,x,y) = dot(x, cholesky(M)\y)
+#M will be one of the elements of Vgrp, so it should be pd
+#We should probably implement a check for this, though 
 
 """
 Calculates the negative log-likelihod 
@@ -52,12 +77,13 @@ ARGUMENTS
 OUTPUT
 - Value of the negative log-likelihood
 """
-function negloglike(invVgrp, ygrp, Xgrp, β)
+function negloglike(Vgrp, ygrp, Xgrp, β)
 
-    det_invV = sum(map(x -> logabsdet(x)[1], invVgrp))
-    quads = @. transpose(ygrp - Xgrp * [β]) * invVgrp * (ygrp - Xgrp * [β])
+    detV = sum(map(x -> logabsdet(x)[1], Vgrp))
+    residgrp = resid(Xgrp, ygrp, β)
+    quadgrp = quad_form_inv.(Vgrp, residgrp)
     Ntot = sum(length.(ygrp))
-    return .5(Ntot*log(2π) - det_invV + sum(quads)) 
+    return .5(Ntot*log(2π) + detV + sum(quadgrp)) 
 
 end
 
@@ -81,25 +107,26 @@ function cov_start(Xgrp, ygrp, Zgrp, β)
     # given by the below function
 
     function σ²hat(Xgrp, ygrp, Zgrp, β, η) 
-        invṼgrp = invV(η, Zgrp, 1)
-        quads = @. transpose(ygrp - Xgrp*[β]) * invṼgrp * (ygrp - Xgrp * [β])
+        Ṽgrp = Vgrp(η, Zgrp, 1)
+        residgrp = resid(Xgrp, ygrp, β)
+        quadgrp = quad_form_inv.(Ṽgrp, residgrp)
         Ntot = sum(length.(ygrp))
-        σ² = sum(quads)/Ntot
+        σ² = sum(quadgrp)/Ntot
         return(σ²)
     end
     
     # We can now profile the likelihood and optimize with respect to η 
 
     function profile(η)
-        σ² = σ²hat(Xgrp, ygrp, Zgrp, β, η[1])
-        L = η[1]*sqrt(σ²)
-        negloglike(invV(L, Zgrp, σ²), ygrp, Xgrp, β) 
+        σ² = σ²hat(Xgrp, ygrp, Zgrp, β, η)
+        L = η*sqrt(σ²)
+        negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β) 
     end
 
-    result = optimize(profile, [0,], [Inf,], [1.,], Fminbox())
+    result = optimize(profile, 0.0001, 1.0e4) #will need to fix
     
     if Optim.converged(result)
-        η = Optim.minimizer(result)[1]
+        η = Optim.minimizer(result)
     else
         error("Convergence for η not reached")
     end
@@ -115,28 +142,23 @@ end
 Calculates active_set entries of the diagonal of Hessian matrix for fixed effect parameters 
 and updates `hess_diag` with these values--see 
 """
-function hessian_diag!(invVgrp, Xactgrp, active_set, hess_diag)
-    diag_quads = @. diag(transpose(Xactgrp) * invVgrp * Xactgrp)
-    hess_diag[active_set] = sum(diag_quads)
+function hessian_diag!(Vgrp, Xactgrp, active_set, hess_diag)
+    quadgrp = quad_form_inv.(Vgrp, Xactgrp) 
+    hess_diag[active_set] = quadgrp
     return nothing 
 end
 
 
+"""
+Soft Threshold
+"""
 soft_thresh(z,g) = sign(z)*max(abs(z)-g,0)
 
 
 """
-Calculates residuals 
+Armijo Rule
 """
-function resid(Xgrp, ygrp, β, active_set)
-    Xactgrp = map(X -> X[:,active_set], Xgrp)
-    residgrp = ygrp .- Xactgrp.*[β[active_set]]
-    return residgrp
-end
-
-
-
-function armijo(Xgrp, ygrp, invVgrp, fpars, j, cut, hold, hnew, cost, p, converged)
+function armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hold, hnew, cost, p, converged)
     fparnew = copy(fpars)
    
     #Calculate dk
@@ -158,7 +180,7 @@ function armijo(Xgrp, ygrp, invVgrp, fpars, j, cut, hold, hnew, cost, p, converg
         #Armijo line search
         for l in 0:control.max_armijo
             fparsnew[j] = fpars[j] + control.a_init*control.Δ^l*dk
-            costnew = negloglike(invVgrp, ygrp, Xgrp, fparnew) + λ*norm(fparsnew[p+2:end], 1)
+            costnew = negloglike(Vgrp, ygrp, Xgrp, fparnew) + λ*norm(fparsnew[p+2:end], 1)
             addΔ = control.a_init*control.Δ^l*control.ρ*Δk
             if costnew <= cost + addΔ
                 fpars[j] = fparsnew[j]
@@ -175,20 +197,46 @@ function armijo(Xgrp, ygrp, invVgrp, fpars, j, cut, hold, hnew, cost, p, converg
     return (fpars = fpars , cost = cost, converged = converged)
 end
 
+""" 
+Update of L for identity covariance structure
+""" 
+function L_ident_update(L, Xgrp, ygrp, Zgrp, β, σ²)
 
-function L_ident_update(Xgrp, ygrp, Zgrp, β, σ²)
-
-    profile(L) = negloglike(invV(L, Zgrp, σ²), ygrp, Xgrp, β)
-    result = optimize(profile, [0,], [Inf,], [1.,], Fminbox())
+    profile(L) = negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β)
+    result = optimize(profile, .0001, 1.0e4) #Will need to fix
     
     if Optim.converged(result)
-        L = Optim.minimizer(result)[1]
+        L = Optim.minimizer(result)
     else
         error("Convergence for L not reached")
     end
 
     return L
 end
+
+
+"""
+Update of coordinate s of L for diagonal covariance structure
+"""
+function L_diag_update!(L, Xgrp, ygrp, Zgrp, β, σ², s)
+    
+    Lcopy = copy(L)
+    function profile(x)
+        Lcopy[s] = x 
+        negloglike(Vgrp(Lcopy, Zgrp, σ²), ygrp, Xgrp, β) 
+    end
+    result = optimize(profile, .0001, 1.0e4) #Will need to fix
+
+    if Optim.converged(result)
+        L[s] = Optim.minimizer(result)
+    else
+        error("Converge for $(s)th coordinate of L not reached")
+    end
+
+    return Nothing
+
+end
+
 
 
 """
@@ -206,7 +254,7 @@ ARGUMENTS
 OUTPUT
 - Fitted model
 """
-#function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control) 
+# function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control) 
 
 #     # --- Introductory checks --- 
 #     # ---------------------------------------------
@@ -239,7 +287,7 @@ OUTPUT
 #     #Initialized fixed effect parameters using Lasso that ignores random effects
 #     lassopath = fit(LassoPath, [X G], y; penalty_factor=[zeros(p); ones(q)])
 #     fpars = coef(lassopath; select=MinBIC()) #Fixed effects
-#     β₀ = fpars[(p+2):end]
+#     β = fpars[(p+2):end]
 
 #     #Initialize covariance parameters
 #     L, σ² = cov_start(XaugG, ygrp, Zgrp, fpars)
@@ -247,8 +295,8 @@ OUTPUT
 
 #     # --- Calculate objective function for the starting values ---
 #     # ---------------------------------------------
-#     invVgrp = invV(L, Zgrp, σ²)
-#     neglike = negloglike(invVgrp, ygrp, XaugGgrp, fpars)
+#     Vgrp = Vgrp(L, Zgrp, σ²)
+#     neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
 #     cost = neglike + λ*norm(β₀, 1)
 #     println("Cost at initialization: $(cost)")
 
@@ -280,6 +328,7 @@ OUTPUT
 
 #         #Variables that are being updated
 #         fparsold = copy(fpars)
+#         βold = copy(β)
 #         costold = cost
 #         Lold = copy(L)
 #         σ²old = σ² 
@@ -300,18 +349,17 @@ OUTPUT
 #         end
 
 #         XaugGactgrp = map(X -> X[:,active_set], XaugGgrp)
-#         hessian_diag!(invVgrp, XaugGactgrp, active_set, hess_diag)
+#         hessian_diag!(Vgrp, XaugGactgrp, active_set, hess_diag)
 #         hess_diag_untrunc = copy(hess_diag)
 #         hess_diag[active_set] = max.(min.(hess_diag[active_set], control.lower), control.upper)
-
-#         invVXaugGactgrp = invVgrp .* XaugGactgrp
 
 #         #Update fixed effect parameters that are in active_set
 #         for j in active_set 
 
+#             XaugGgrpⱼ = map(X -> X[:j], XaugGgrp)
 #             XaugGgrp₋ⱼ = map(X -> X[:,Not(j)], XaugGgrp)
-#             rgrp = ygrp .- XaugGgrp₋ⱼ * fpars[Not(j)]
-#             cut = sum( transpose.(rgrp) .* map(X -> X[:, j], invVXaugGactgrp) ) 
+#             rgrp₋ⱼ = resid(XaugGgrp₋ⱼ, ygrp, fpars[Not(j)])
+#             cut = sum(quad_form_inv2(Vgrp, rgrp₋ⱼ, XaugGgrpⱼ)) 
 
 #             if hess_diag[j] == hess_diag_untrunc[j] #Outcome of Armijo rule can be computed analytically
 #                 if j in 1:p+1
@@ -320,14 +368,15 @@ OUTPUT
 #                     fpar[j] = soft_thresh(cut, λ)/hess_diag[j]
 #                 end 
 #             else #Must actually perform Armijo line search 
-#                 arm = armijo(Xgrp, ygrp, invVgrp, fpars, j, cut, 
-#                 hess_diag_untrunc[j], hess_diag[j], cost, p, converged)
+#                 arm = armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hess_diag_untrunc[j], hess_diag[j], cost, p, converged)
 #                 fpars = arm.fpars
 #                 cost = arm.cost
 #                 converged = arm.converged
 #             end
 #             control.trace > 3 && println(cost) 
 #         end
+#         β = fpars[(p+2):end] #Pull out new penalized coefficients
+
 #         control.trace > 3 && println("------------------------")
 
 #         #---Optimization with respect to covariance parameters ----------------------------
@@ -338,16 +387,21 @@ OUTPUT
 #         active_set = findall(fpars .== 0)
 #         resgrp = resid(XaugGgrp, ygrp, fpars, active_set)
         
+#         # Optimization of L
 #         if ψstr == :ident
-            
+#             L = L_ident_update(L, XaugGgrp, ygrp, Zgrp, fpars, σ²)
 #         elseif ψstr == :diag
-
+#             map(s->L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s), 1:m)
 #         else  #ψstr == :sym
-        
-#         end
             
+#         end
+#         # Optimization of σ²
 
 
+#         #Calculate new cost function
+#         Vgrp = V(L, Zgrp, σ²)
+#         neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
+#         cost = neglike + λ*norm(β, 1)
 
 #     end
 # end
