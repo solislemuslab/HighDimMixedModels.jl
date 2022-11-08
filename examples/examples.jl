@@ -64,7 +64,7 @@ Random.seed!(540)
 N = 30; nᵢ = 80; p=28; m=3  
 β=[15; repeat([5,10,20,10,0,0,0], 4)]
 X = hcat(fill(1, N*nᵢ), randn(N*nᵢ, p))
-L = 3000; σ² = 100
+L = 100; σ² = 100
 Xgrp, Zgrp, ygrp = simulate(; β=β, N=N, nᵢ=nᵢ, X=X, L=L, σ²=σ², p=28, m=m)
 
 

@@ -200,15 +200,19 @@ end
 """ 
 Update of L for identity covariance structure
 """ 
-function L_ident_update(L, Xgrp, ygrp, Zgrp, β, σ²)
+function L_ident_update(Xgrp, ygrp, Zgrp, β, σ², var_int, thres)
 
     profile(L) = negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β)
-    result = optimize(profile, .0001, 1.0e4) #Will need to fix
+    result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
     
-    if Optim.converged(result)
-        L = Optim.minimizer(result)
+    Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
+    min = Optim.minimizer(result)
+
+    if min < thres
+        L = 0
+        println("L was set to 0 (no group variation)")
     else
-        error("Convergence for L not reached")
+        L = min
     end
 
     return L
@@ -217,25 +221,81 @@ end
 
 """
 Update of coordinate s of L for diagonal covariance structure
+
+ARGUMENTS
+- L :: A vector of parameters which will be updated by the function
+- s :: The coordinate of L that is being updated (number between 1 and length(L))
 """
-function L_diag_update!(L, Xgrp, ygrp, Zgrp, β, σ², s)
+function L_diag_update!(L, Xgrp, ygrp, Zgrp, β, σ², s, var_int, thres)
     
     Lcopy = copy(L)
+    
     function profile(x)
         Lcopy[s] = x 
         negloglike(Vgrp(Lcopy, Zgrp, σ²), ygrp, Xgrp, β) 
     end
-    result = optimize(profile, .0001, 1.0e4) #Will need to fix
+    result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
 
-    if Optim.converged(result)
-        L[s] = Optim.minimizer(result)
+    Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
+    min = Optim.minimizer(result)
+    
+    if min < thres
+        L[s] = 0
+        println("$(s) coordinate of L was set to 0")
     else
-        error("Converge for $(s)th coordinate of L not reached")
+        L[s] = min
     end
 
     return Nothing
 
 end
+
+""" 
+Update of L for general symmetric positive definite covariance structure
+ARGUMENTS
+- L :: A lower triangular matrix of parameters which will be updated by the function
+- coords :: Tuple representing the coordinates of the entry of L that is being updated
+"""
+function L_sym_update!(L, Xgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int, thres)
+    
+    Lcopy = copy(L)
+    int = coords[1]==cords[2] ? var_int : cov_int #Are we minimizing a covariance parameter or a variance parameters
+    function profile(x)
+        Lcopy[coords[1], coords[2]] = x 
+        negloglike(Vgrp(Lcopy, Zgrp, σ²), ygrp, Xgrp, β) 
+    end
+
+    result = optimize(profile, int[1], int[2]) #Will need to fix
+
+    Optim.converged(result) || error("Minimization with respect to $(coords) entry of L failed to converge")
+    min = Optim.minimizer(result)
+    
+    if min < thres
+        L[coords[1], coords[2]] = 0
+        println("$(coords) entry of L was set to 0")
+    else
+        L[coords[1], coords[2]] = min
+    end
+
+    return Nothing
+end
+
+"""
+Update of σ²
+"""
+function σ²update(Xgrp, ygrp, Zgrp, β, L, var_int)
+    
+    profile(σ²) = negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β)
+    result = optimize(profile, var_int[1]^2, var_int[2]^2) #Will need to fix
+    
+    Optim.converged(result) || error("Minimization with respect to σ² failed to converge")
+
+    return Optim.minimizer(result)
+
+end
+
+
+
 
 
 
@@ -254,157 +314,166 @@ ARGUMENTS
 OUTPUT
 - Fitted model
 """
-# function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control) 
+function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control) 
 
-#     # --- Introductory checks --- 
-#     # ---------------------------------------------
+    # --- Introductory checks --- 
+    # ---------------------------------------------
 
-#     #Check that ψstr matches one of the options
-#     #Etc.
+    #Check that ψstr matches one of the options
+    #Etc.
 
 
     
-#     # --- Intro allocations ---
-#     # ---------------------------------------------
-#     g = length(unique(grp)) #Number of groups
-#     N = length(y) #Total number of observations
-#     q = size(G, 2) #Number of penalized covariates
-#     p = size(X, 2) #Number of unpenalized covariates
-#     m = size(Z, 2) #Number of random effects
-#     Xaug = [ones(N) X] 
-#     XaugG = [Xaug G]
-#     #Grouped data
-#     Zgrp, XaugGgrp, ygrp = Matrix[], Matrix[], Vector[]
-#     for group in unique(grp)
-#         Zᵢ, XaugGᵢ, yᵢ = Z[grp .== group,:], XaugG[grp .== group,:], y[grp .== group]
-#         push!(Zgrp, Zᵢ); push!(XaugGgrp, XaugGᵢ); push(ygrp, yᵢ)
-#     end
+    # --- Intro allocations ---
+    # ---------------------------------------------
+    g = length(unique(grp)) #Number of groups
+    N = length(y) #Total number of observations
+    q = size(G, 2) #Number of penalized covariates
+    p = size(X, 2) #Number of unpenalized covariates
+    m = size(Z, 2) #Number of random effects
+    Xaug = [ones(N) X] 
+    XaugG = [Xaug G]
+    #Grouped data
+    Zgrp, XaugGgrp, ygrp = Matrix[], Matrix[], Vector[]
+    for group in unique(grp)
+        Zᵢ, XaugGᵢ, yᵢ = Z[grp .== group,:], XaugG[grp .== group,:], y[grp .== group]
+        push!(Zgrp, Zᵢ); push!(XaugGgrp, XaugGᵢ); push(ygrp, yᵢ)
+    end
     
 
-#     # --- Initializing parameters ---
-#     # ---------------------------------------------
+    # --- Initializing parameters ---
+    # ---------------------------------------------
 
-#     #Initialized fixed effect parameters using Lasso that ignores random effects
-#     lassopath = fit(LassoPath, [X G], y; penalty_factor=[zeros(p); ones(q)])
-#     fpars = coef(lassopath; select=MinBIC()) #Fixed effects
-#     β = fpars[(p+2):end]
+    #Initialized fixed effect parameters using Lasso that ignores random effects
+    lassopath = fit(LassoPath, [X G], y; penalty_factor=[zeros(p); ones(q)])
+    fpars = coef(lassopath; select=MinBIC()) #Fixed effects
+    β = fpars[(p+2):end]
 
-#     #Initialize covariance parameters
-#     L, σ² = cov_start(XaugG, ygrp, Zgrp, fpars)
-
-
-#     # --- Calculate objective function for the starting values ---
-#     # ---------------------------------------------
-#     Vgrp = Vgrp(L, Zgrp, σ²)
-#     neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
-#     cost = neglike + λ*norm(β₀, 1)
-#     println("Cost at initialization: $(cost)")
+    #Initialize covariance parameters
+    L, σ² = cov_start(XaugG, ygrp, Zgrp, fpars)
 
 
-#     # --- Coordinate Gradient Descent -------------
-#     # ---------------------------------------------
+    # --- Calculate objective function for the starting values ---
+    # ---------------------------------------------
+    Vgrp = Vgrp(L, Zgrp, σ²)
+    neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
+    cost = neglike + λ*norm(β₀, 1)
+    println("Cost at initialization: $(cost)")
 
-#     #Some allocations 
-#     if Ψstr == :sym
-#         L = LowerTriangular(L*I(m))
-#     elseif Ψstr == :diag
-#         L = fill(L, m) 
-#     elseif Ψstr != :ident
-#         error("ψstr must be one of :sym, :diag, or :ident")
-#     end
+
+    # --- Coordinate Gradient Descent -------------
+    # ---------------------------------------------
+
+    #Some allocations 
+    if Ψstr == :sym
+        L = LowerTriangular(L*I(m))
+    elseif Ψstr == :diag
+        L = fill(L, m) 
+    elseif Ψstr != :ident
+        error("ψstr must be one of :sym, :diag, or :ident")
+    end
     
-#     hess_diag = zeros(p+q+1)
-#     fpars_change = 
+    hess_diag = zeros(p+q+1)
+    fpars_change = 
     
 
-#     #Algorithm parameters
-#     converged = 0
-#     counter_in = 0
-#     counter = 0
+    #Algorithm parameters
+    converged = 0
+    counter_in = 0
+    counter = 0
 
-#     while 
-#         counter += 1
-#         println(counter,"...") 
+    while converged = 0 
+        counter += 1
+        println(counter,"...") 
 
-#         #Variables that are being updated
-#         fparsold = copy(fpars)
-#         βold = copy(β)
-#         costold = cost
-#         Lold = copy(L)
-#         σ²old = σ² 
+        #Variables that are being updated
+        fparsold = copy(fpars)
+        βold = copy(β)
+        costold = cost
+        Lold = copy(L)
+        σ²old = σ² 
 
 
-#         #---Optimization with respect to fixed effect parameters ----------------------------
-#         #------------------------------------------------------------------------------------
+        #---Optimization with respect to fixed effect parameters ----------------------------
+        #------------------------------------------------------------------------------------
 
-#         #We'll only update fixed effect parameters in "active_set"--
-#         #see  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
-#         active_set = findall(fpars .== 0)
+        #We'll only update fixed effect parameters in "active_set"--
+        #see  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
+        active_set = findall(fpars .== 0)
         
-#         if counter_in == 0 || counter_in > control.number 
-#             active_set = 1:(p+q+1)
-#             counter_in = 1
-#         else 
-#             counter_in += 1
-#         end
+        if counter_in == 0 || counter_in > control.number 
+            active_set = 1:(p+q+1)
+            counter_in = 1
+        else 
+            counter_in += 1
+        end
 
-#         XaugGactgrp = map(X -> X[:,active_set], XaugGgrp)
-#         hessian_diag!(Vgrp, XaugGactgrp, active_set, hess_diag)
-#         hess_diag_untrunc = copy(hess_diag)
-#         hess_diag[active_set] = max.(min.(hess_diag[active_set], control.lower), control.upper)
+        XaugGactgrp = map(X -> X[:,active_set], XaugGgrp)
+        hessian_diag!(Vgrp, XaugGactgrp, active_set, hess_diag)
+        hess_diag_untrunc = copy(hess_diag)
+        hess_diag[active_set] = max.(min.(hess_diag[active_set], control.lower), control.upper)
 
-#         #Update fixed effect parameters that are in active_set
-#         for j in active_set 
+        #Update fixed effect parameters that are in active_set
+        for j in active_set 
 
-#             XaugGgrpⱼ = map(X -> X[:j], XaugGgrp)
-#             XaugGgrp₋ⱼ = map(X -> X[:,Not(j)], XaugGgrp)
-#             rgrp₋ⱼ = resid(XaugGgrp₋ⱼ, ygrp, fpars[Not(j)])
-#             cut = sum(quad_form_inv2(Vgrp, rgrp₋ⱼ, XaugGgrpⱼ)) 
+            XaugGgrpⱼ = map(X -> X[:j], XaugGgrp)
+            XaugGgrp₋ⱼ = map(X -> X[:,Not(j)], XaugGgrp)
+            rgrp₋ⱼ = resid(XaugGgrp₋ⱼ, ygrp, fpars[Not(j)])
+            cut = sum(quad_form_inv2(Vgrp, rgrp₋ⱼ, XaugGgrpⱼ)) 
 
-#             if hess_diag[j] == hess_diag_untrunc[j] #Outcome of Armijo rule can be computed analytically
-#                 if j in 1:p+1
-#                     fpar[j] = cut/hess_diag[j]
-#                 else
-#                     fpar[j] = soft_thresh(cut, λ)/hess_diag[j]
-#                 end 
-#             else #Must actually perform Armijo line search 
-#                 arm = armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hess_diag_untrunc[j], hess_diag[j], cost, p, converged)
-#                 fpars = arm.fpars
-#                 cost = arm.cost
-#                 converged = arm.converged
-#             end
-#             control.trace > 3 && println(cost) 
-#         end
-#         β = fpars[(p+2):end] #Pull out new penalized coefficients
+            if hess_diag[j] == hess_diag_untrunc[j] #Outcome of Armijo rule can be computed analytically
+                if j in 1:p+1
+                    fpar[j] = cut/hess_diag[j]
+                else
+                    fpar[j] = soft_thresh(cut, λ)/hess_diag[j]
+                end 
+            else #Must actually perform Armijo line search 
+                arm = armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hess_diag_untrunc[j], hess_diag[j], cost, p, converged)
+                fpars = arm.fpars
+                cost = arm.cost
+                converged = arm.converged
+            end
+            control.trace > 3 && println(cost) 
+        end
+        β = fpars[(p+2):end] #Pull out new penalized coefficients
 
-#         control.trace > 3 && println("------------------------")
+        control.trace > 3 && println("------------------------")
 
-#         #---Optimization with respect to covariance parameters ----------------------------
-#         #------------------------------------------------------------------------------------
 
-         
-#         # calculations before the covariance optimization
-#         active_set = findall(fpars .== 0)
-#         resgrp = resid(XaugGgrp, ygrp, fpars, active_set)
+        #---Optimization with respect to covariance parameters ----------------------------
+        #------------------------------------------------------------------------------------
+
+        # calculations before the covariance optimization
+        active_set = findall(fpars .== 0)
+        resgrp = resid(XaugGgrp, ygrp, fpars, active_set)
         
-#         # Optimization of L
-#         if ψstr == :ident
-#             L = L_ident_update(L, XaugGgrp, ygrp, Zgrp, fpars, σ²)
-#         elseif ψstr == :diag
-#             map(s->L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s), 1:m)
-#         else  #ψstr == :sym
-            
-#         end
-#         # Optimization of σ²
+        # Optimization of L
+        if ψstr == :ident
+            L = L_ident_update(XaugGgrp, ygrp, Zgrp, fpars, σ², control.var_int, control.thres)
+        elseif ψstr == :diag
+            foreach( s -> L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s, control.var_int, control.thres), 1:m)
+        else  #ψstr == :sym
+            tuples = collect(Iterators.product(1:m, 1:m)) #Matrix of tuples
+            tuples = tuples[tril!(trues((m,m)), 0)] #Vector of tuples (i, j), where i≥j
+            foreach( coords -> L_sym_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², coords, control.var_int, control.cov_int, control.thres), 
+                    tuples)
+        end
 
+        control.trace > 3 && println("------------------------")
 
-#         #Calculate new cost function
-#         Vgrp = V(L, Zgrp, σ²)
-#         neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
-#         cost = neglike + λ*norm(β, 1)
+        # Optimization of σ²
+        σ² = σ²update(XaugGgrp, ygrp, Zgrp, fpars, L, control.var_int)
+        control.trace > 3 && println("------------------------")
 
-#     end
-# end
+        #Calculate new cost function
+        Vgrp = V(L, Zgrp, σ²)
+        neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
+        cost = neglike + λ*norm(β, 1)
+
+        #Compare to previous cost function...
+
+    end
+end
 
 
 
