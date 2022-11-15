@@ -134,9 +134,9 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 
 [[Distributions]]
 deps = ["ChainRulesCore", "DensityInterface", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SparseArrays", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "Test"]
-git-tree-sha1 = "04db820ebcfc1e053bd8cbb8d8bccf0ff3ead3f7"
+git-tree-sha1 = "bee795cdeabc7601776abbd6b9aac2ca62429966"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.76"
+version = "0.25.77"
 
 [[DocStringExtensions]]
 deps = ["LibGit2"]
@@ -198,7 +198,7 @@ uuid = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 version = "1.8.1"
 
 [[HighDimMixedModels]]
-deps = ["InvertedIndices", "Lasso", "LinearAlgebra", "Optim", "Random"]
+deps = ["InvertedIndices", "Lasso", "LinearAlgebra", "Optim", "Parameters", "Pkg", "Random"]
 path = ".."
 uuid = "5d0d0550-ba84-42d6-a33e-4f9cf65119aa"
 version = "0.1.0"

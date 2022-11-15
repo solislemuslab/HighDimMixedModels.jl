@@ -2,13 +2,15 @@ module HighDimMixedModels
 
 using LinearAlgebra
 using Random
-using Lasso
-using Optim
+using Lasso #Needed to get initial estimates of the fixed effects
+using Optim #Needed for univariate optimization in coordinated gradient descent algorithm
 using InvertedIndices #Allows negative indexing, like in R
+using Parameters #Supplies macro for structs with default field values
 
 export cov_start
 export L_ident_update
 export L_diag_update!
+export Control
 
 """
 Returns covariance matrices of the responses, by group
@@ -226,7 +228,7 @@ ARGUMENTS
 - L :: A vector of parameters which will be updated by the function
 - s :: The coordinate of L that is being updated (number between 1 and length(L))
 """
-function L_diag_update!(L, Xgrp, ygrp, Zgrp, β, σ², s, var_int, thres)
+function L_diag_update!(L, Xgrp, ygrp, Zgrp, β, σ², s, var_int = (0, 1e6), thres=1e-4)
     
     Lcopy = copy(L)
     
@@ -294,70 +296,130 @@ function σ²update(Xgrp, ygrp, Zgrp, β, L, var_int)
 
 end
 
+"""
+Algorithm Hyper-parameters
 
-
-
+- tol :: Convergence tolerance
+- seed :: Random seed for cross validation for estimating initial fixed effect parameters using Lasso
+- trace :: Integer. 1 prints no output, 2 prints warnings, and 3 prints the current iterate and function value and warnings
+- max_iter :: Integer. Maximum number of iterations
+- max_armijo :: Integer. Maximum number of steps in Armijo rule algorithm. If the maximum is reached, algorithm doesn't update current coordinate and proceeds to the next coordinate
+- act_number :: Integer between 1 and 5. We will only update all fixed effect parameters every act_number iterations. Otherwise, we update only the parameters in thea current active set.
+- a₀ :: a₀ in the Armijo step. See Schelldorfer et al. (2010)
+- δ :: δ in the Armijo step. See Schelldorfer et al. (2010)
+- ρ :: ρ in the Armijo step. See Schelldorfer et al. (2010)
+- γ :: γ in the Armijo step. See Schelldorfer et al. (2010)
+- lower :: Lower bound for the Hessian
+- upper :: Upper bound for the Hessian
+- var_int :: Tuple with bounds of interval on which to optimize the variance parameters used in `optimize` function. See Optim.jl in section "minimizing a univariate function on a bounded interval"
+- cov_int :: Tuple with bounds of interval on which to optimize the covariance parameters used in `optimize` function. See Optim.jl in section "minimizing a univariate function on a bounded interval"
+- optimize_method :: Symbol denoting method for performing the univariate optimization, either :Brent or :GoldenSection
+- thres :: If variance or covariance parameter has smaller absolute value than `thres`, parameter is set to 0
+"""
+@with_kw struct Control
+    tol::Float64  = 1e-4
+    seed::Int = 770
+    trace::Int = 2
+    max_iter::Int = 1000
+    max_armijo::Int = 20
+    act_number::Int = 5
+    a₀::Float64 = 1.0
+    δ::Float64 = 0.1
+    ρ::Float64 = 0.001
+    γ::Float64 = 0.0
+    lower::Float64 = 1e-6
+    upper::Float64 = 1e8
+    var_int::Tuple{Float64, Float64} = (0.0, 10.0)
+    cov_int::Tuple{Float64, Float64} = (-5.0, 5.0)
+    optimize_method::Symbol = :Brent
+    thres::Float64 = 1e-4
+end
 
 
 """
 Fits penalized linear mixed effect model 
 
 ARGUMENTS
-- G :: High dimensional design matrix for penalized fixed effects (not assumed to include column of ones)
-- X :: Low dimensional design matrix for unpenalized fixed effects (not assumed to include column of ones)
-- Z :: Design matrix for random effects
-- grp :: Variable defining groups (i.e. factor)
-- Ψstr :: One of :ident, :diag, :sym, specifying covariance structure of random effects
-- λ :: Penalty parameter
-- control :: control mutable struct with algorithm hyperparameters
+Positional: 
+- G :: High dimensional design matrix for penalized fixed effects (not assumed to include column of ones) (REQUIRE)
+- X :: Low dimensional design matrix for unpenalized fixed effects (assumed to include column of ones) (REQUIRED)
+- y :: Vector of responses (REQUIRED)
+- grp :: Vector of strings of same length as y assigning each observation to a particular group (REQUIRED)
+- Z :: Design matrix for random effects (optional, default is all columns of X)
+Keyword:
+- λ :: Positive regularizing penalty (optional, default is 10.0)
+- init_coef :: Tuple with three elements: starting value for fixed effects, random effect, and error variance parameters
+- Ψstr :: One of :ident, :diag, :sym, specifying covariance structure of random effects. Default is :diag.
+- Control :: Struct with fields for hyperparameters of the algorithm
 
 OUTPUT
 - Fitted model
 """
-function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control) 
+function lmmlasso(G::Matrix{Real}, X::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
+    λ::Float64=10.0, init_coef::Union{Vector, Nothing}=nothing, Ψstr::Symbol=:diag, Control=Control()) 
 
     # --- Introductory checks --- 
     # ---------------------------------------------
+    N = length(y) #Total number of observations
+    @assert size(G, 1) == N "G and y incompatable dimension"
+    @assert size(X, 1) == N "X and y incompatable dimension"
+    @assert size(Z, 1) == N "Z and y incompatable dimension"
+    @assert length(grp) == N "grp and y incompatable dimension"
+
+    @assert X[:,1] == ones(N) "First column of X must be all ones"
+    groups = unique(grp)
+    g = length(groups) #Number of groups
+    @assert g > 1 "Only one group, no covariance parameters can be estimated"
+    
+    @assert λ > 0 "λ is regularization parameter, must be positive"
 
     #Check that ψstr matches one of the options
     #Etc.
 
-
-    
-    # --- Intro allocations ---
-    # ---------------------------------------------
-    g = length(unique(grp)) #Number of groups
-    N = length(y) #Total number of observations
-    q = size(G, 2) #Number of penalized covariates
-    p = size(X, 2) #Number of unpenalized covariates
-    m = size(Z, 2) #Number of random effects
-    Xaug = [ones(N) X] 
-    XaugG = [Xaug G]
-    #Grouped data
-    Zgrp, XaugGgrp, ygrp = Matrix[], Matrix[], Vector[]
-    for group in unique(grp)
-        Zᵢ, XaugGᵢ, yᵢ = Z[grp .== group,:], XaugG[grp .== group,:], y[grp .== group]
-        push!(Zgrp, Zᵢ); push!(XaugGgrp, XaugGᵢ); push(ygrp, yᵢ)
+    @assert ψstr in [:ident, :diag, :sym] "ψstr must be one of :ident, :diag, or :sym"
+    Control::HighDimMixedModels.Control 
+    @assert Control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
+    if init_coef !== nothing
+        @assert length(init_coef) == 3 "init_coef must be of length 3"
+        @assert length(init_coef)
     end
     
 
+    # --- Intro allocations -----------------------
+    # ---------------------------------------------
+    q = size(G, 2) #Number of penalized covariates
+    p = size(X, 2) - 1 #Number of unpenalized covariates (does not include intercept)
+    m = size(Z, 2) #Number of covariates associated with random effects
+    XG = [X G]
+    
+    #Grouped data
+    Zgrp, XGgrp, ygrp = Matrix[], Matrix[], Vector[]
+    for group in unique(grp)
+        Zᵢ, XGᵢ, yᵢ = Z[grp .== group,:], XG[grp .== group,:], y[grp .== group]
+        push!(Zgrp, Zᵢ); push!(XGgrp, XGᵢ); push(ygrp, yᵢ)
+    end
+    
     # --- Initializing parameters ---
     # ---------------------------------------------
+    if y === nothing
+        #Initialize fixed effect parameters using Lasso that ignores random effects
+        Random.seed!(Control.seed)
+        lassopath = fit(LassoPath, [X[:,2:end] G], y; penalty_factor=[zeros(p); ones(q)])
+        fpars = coef(lassopath; select=MinCVmse(lassopath, 10)) #Fixed effects
 
-    #Initialized fixed effect parameters using Lasso that ignores random effects
-    lassopath = fit(LassoPath, [X G], y; penalty_factor=[zeros(p); ones(q)])
-    fpars = coef(lassopath; select=MinBIC()) #Fixed effects
+        #Initialize covariance parameters
+        L, σ² = cov_start(XGgrp, ygrp, Zgrp, fpars)
+    else
+        fpars, L, σ² = init_coef
+    end
     β = fpars[(p+2):end]
-
-    #Initialize covariance parameters
-    L, σ² = cov_start(XaugG, ygrp, Zgrp, fpars)
 
 
     # --- Calculate objective function for the starting values ---
     # ---------------------------------------------
     Vgrp = Vgrp(L, Zgrp, σ²)
     neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
-    cost = neglike + λ*norm(β₀, 1)
+    cost = neglike + λ*norm(β, 1)
     println("Cost at initialization: $(cost)")
 
 
@@ -373,25 +435,22 @@ function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control)
         error("ψstr must be one of :sym, :diag, or :ident")
     end
     
-    hess_diag = zeros(p+q+1)
-    fpars_change = 
-    
 
-    #Algorithm parameters
-    converged = 0
+    #Algorithm allocations
+    hess_diag = zeros(p+q+1)
+    converged = false
     counter_in = 0
     counter = 0
 
-    while converged = 0 
+    while converged == false 
         counter += 1
-        println(counter,"...") 
+        Control.trace == 2 && println("Outer iteration $counter") 
 
         #Variables that are being updated
         fparsold = copy(fpars)
-        βold = copy(β)
-        costold = cost
         Lold = copy(L)
         σ²old = σ² 
+        costold = cost
 
 
         #---Optimization with respect to fixed effect parameters ----------------------------
@@ -401,7 +460,7 @@ function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control)
         #see  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
         active_set = findall(fpars .== 0)
         
-        if counter_in == 0 || counter_in > control.number 
+        if counter_in == 0 || counter_in > Control.act_min 
             active_set = 1:(p+q+1)
             counter_in = 1
         else 
@@ -411,7 +470,7 @@ function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control)
         XaugGactgrp = map(X -> X[:,active_set], XaugGgrp)
         hessian_diag!(Vgrp, XaugGactgrp, active_set, hess_diag)
         hess_diag_untrunc = copy(hess_diag)
-        hess_diag[active_set] = max.(min.(hess_diag[active_set], control.lower), control.upper)
+        hess_diag[active_set] = max.(min.(hess_diag[active_set], Control.lower), Control.upper)
 
         #Update fixed effect parameters that are in active_set
         for j in active_set 
@@ -433,11 +492,11 @@ function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control)
                 cost = arm.cost
                 converged = arm.converged
             end
-            control.trace > 3 && println(cost) 
+            Control.trace > 3 && println(cost) 
         end
         β = fpars[(p+2):end] #Pull out new penalized coefficients
 
-        control.trace > 3 && println("------------------------")
+        Control.trace > 3 && println("------------------------")
 
 
         #---Optimization with respect to covariance parameters ----------------------------
@@ -449,21 +508,21 @@ function lmmlasso(G, X, y, Z=X, grp, Ψstr, λ; control)
         
         # Optimization of L
         if ψstr == :ident
-            L = L_ident_update(XaugGgrp, ygrp, Zgrp, fpars, σ², control.var_int, control.thres)
+            L = L_ident_update(XaugGgrp, ygrp, Zgrp, fpars, σ², Control.var_int, Control.thres)
         elseif ψstr == :diag
-            foreach( s -> L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s, control.var_int, control.thres), 1:m)
+            foreach( s -> L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s, Control.var_int, Control.thres), 1:m)
         else  #ψstr == :sym
             tuples = collect(Iterators.product(1:m, 1:m)) #Matrix of tuples
             tuples = tuples[tril!(trues((m,m)), 0)] #Vector of tuples (i, j), where i≥j
-            foreach( coords -> L_sym_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², coords, control.var_int, control.cov_int, control.thres), 
+            foreach( coords -> L_sym_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², coords, Control.var_int, Control.cov_int, Control.thres), 
                     tuples)
         end
 
-        control.trace > 3 && println("------------------------")
+        Control.trace > 3 && println("------------------------")
 
         # Optimization of σ²
-        σ² = σ²update(XaugGgrp, ygrp, Zgrp, fpars, L, control.var_int)
-        control.trace > 3 && println("------------------------")
+        σ² = σ²update(XaugGgrp, ygrp, Zgrp, fpars, L, Control.var_int)
+        Control.trace > 3 && println("------------------------")
 
         #Calculate new cost function
         Vgrp = V(L, Zgrp, σ²)
