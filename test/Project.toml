@@ -1,2 +1,3 @@
 [deps]
+RCall = "6f49c342-dc21-5d91-9882-a32aef131414"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

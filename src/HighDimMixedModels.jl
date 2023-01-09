@@ -89,9 +89,8 @@ function negloglike(Vgrp, ygrp, Xgrp, β)
 
 end
 
-
 """
-Finds an initial value for the covariance parameters 
+Finds an initial value for the variance and covariance parameters 
 
 ARGUMENTS
 - Xgrp :: Vector of fixed effect design matrices for each group
@@ -100,7 +99,7 @@ ARGUMENTS
 - β :: Initial iterate for fixed effect parameter vector (computed with Lasso ignoring group structure)
 
 OUTPUT
-- Assuming β is true fixed effect vector, estimate of L, and estimate of σ²
+- Assuming β is true fixed effect vector, MLE estimate of scalar L and scalar σ² as tuple (L, σ²)
 
 """
 function cov_start(Xgrp, ygrp, Zgrp, β)

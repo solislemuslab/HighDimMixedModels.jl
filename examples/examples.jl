@@ -6,8 +6,6 @@ using LinearAlgebra
 using Lasso
 using StatsBase
 
-
-
 """
 Simulates a data set
 
@@ -29,7 +27,7 @@ function simulate(grp, β, X, Z, L, σ²)
     m = size(Z)[2] #Number of random effects
     Ntot = size(X)[1] #Total Number of observations
     
-    ndims(L) < 2 || (L = L*L') #If L is a matrix, it should be a lower triangular matrix
+    ndims(L) < 2 || (L = Matrix(L)*Matrix(L')) #If L is a matrix, it should be a lower triangular matrix
     dist_b = MvNormal(zeros(m), L) 
     b = rand(dist_b, N) #Matrix of dimensions m by N
     y = Vector{Float64}(undef, Ntot)
@@ -56,28 +54,29 @@ function lasso(X, y)
 end
 
 
-#Simulate a data-set
+#Simulate the data as done here: https://rdrr.io/cran/lmmlasso/man/lmmlasso.html
 Random.seed!(54)
-N = 100 
-n = fill(100, N)
-p = 6 #Number of covariates
+N = 20 #Number of groups
+p = 6 #Number of covariates not including intercept
+q = 2 #Number of covariates that have associated random effects
+n = fill(6, N) #Observations per group
 grp = string.(inverse_rle(1:N, n))  #grouping variable
-β=[1,2,4,3,0,0,0]
+
+
+β=[10,20,40,30,0,0,50]
 X = hcat(fill(1, sum(n)), randn(sum(n), p))
-Z = X[:,1:2]
-L = LowerTriangular([15 0; 30 30])
-σ² = 50
+Z = X[:,1:q]
+L = LowerTriangular([30 0; 0 30])
+σ² = 10
 y = simulate(grp, β, X, Z, L, σ²)
+Zgrp, Xgrp, ygrp = Matrix[], Matrix[], Vector[]
+for group in unique(grp)
+    Zᵢ, Xᵢ, yᵢ = Z[grp .== group,:], X[grp .== group,:], y[grp .== group]
+    push!(Zgrp, Zᵢ); push!(Xgrp, Xᵢ); push!(ygrp, yᵢ)
+end
 
 ## Initial parameters 
 β₀ = lasso(X, y)
-println("Lasso estimated fixed effect are $β₀")
-
-Zgrp, Xgrp, ygrp = Matrix[], Matrix[], Vector[]
-    for group in unique(grp)
-        Zᵢ, Xᵢ, yᵢ = Z[grp .== group,:], X[grp .== group,:], y[grp .== group]
-        push!(Zgrp, Zᵢ); push!(Xgrp, Xᵢ); push!(ygrp, yᵢ)
-    end
 
 println("(L, σ²) calculated from true fixed parameters is $(cov_start(Xgrp, ygrp, Zgrp, β))")
 println("(L, σ²) calculated from Lasso estimate $(cov_start(Xgrp, ygrp, Zgrp, β₀))")
