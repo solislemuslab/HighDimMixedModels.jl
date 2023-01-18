@@ -6,11 +6,7 @@ using Lasso #Needed to get initial estimates of the fixed effects
 using Optim #Needed for univariate optimization in coordinated gradient descent algorithm
 using InvertedIndices #Allows negative indexing, like in R
 using Parameters #Supplies macro for structs with default field values
-
-export cov_start
-export L_ident_update
-export L_diag_update!
-export Control
+using MLBase #Supplies k-fold cross validation for initial lasso fit
 
 """
 Returns covariance matrices of the responses, by group
@@ -340,8 +336,8 @@ Fits penalized linear mixed effect model
 
 ARGUMENTS
 Positional: 
-- G :: High dimensional design matrix for penalized fixed effects (not assumed to include column of ones) (REQUIRE)
 - X :: Low dimensional design matrix for unpenalized fixed effects (assumed to include column of ones) (REQUIRED)
+- G :: High dimensional design matrix for penalized fixed effects (not assumed to include column of ones) (REQUIRE)
 - y :: Vector of responses (REQUIRED)
 - grp :: Vector of strings of same length as y assigning each observation to a particular group (REQUIRED)
 - Z :: Design matrix for random effects (optional, default is all columns of X)
@@ -354,42 +350,39 @@ Keyword:
 OUTPUT
 - Fitted model
 """
-function lmmlasso(G::Matrix{Real}, X::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
+function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
     λ::Float64=10.0, init_coef::Union{Vector, Nothing}=nothing, Ψstr::Symbol=:diag, Control=Control()) 
 
+    Random.seed!(Control.seed)
     # --- Introductory checks --- 
     # ---------------------------------------------
     N = length(y) #Total number of observations
-    @assert size(G, 1) == N "G and y incompatable dimension"
-    @assert size(X, 1) == N "X and y incompatable dimension"
-    @assert size(Z, 1) == N "Z and y incompatable dimension"
-    @assert length(grp) == N "grp and y incompatable dimension"
+    q = size(G, 2) #Number of penalized covariates 
+    p = size(X, 2) - 1 #Number of unpenalized covariates 
+    m = size(Z, 2) - 1 #Number of covariates associated with random effects 
 
-    @assert X[:,1] == ones(N) "First column of X must be all ones"
+    @assert size(G, 1) == n_tot "G and y incompatable dimension"
+    @assert size(X, 1) == n_tot "X and y incompatable dimension"
+    @assert size(Z, 1) == n_tot "Z and y incompatable dimension"
+    @assert length(grp) == n_tot "grp and y incompatable dimension"
+
+    @assert X[:,1] == ones(n_tot) "First column of X must be all ones"
     groups = unique(grp)
     g = length(groups) #Number of groups
     @assert g > 1 "Only one group, no covariance parameters can be estimated"
     
     @assert λ > 0 "λ is regularization parameter, must be positive"
 
-    #Check that ψstr matches one of the options
-    #Etc.
-
     @assert ψstr in [:ident, :diag, :sym] "ψstr must be one of :ident, :diag, or :sym"
     Control::HighDimMixedModels.Control 
     @assert Control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
     if init_coef !== nothing
         @assert length(init_coef) == 3 "init_coef must be of length 3"
-        @assert length(init_coef)
     end
-    
 
     # --- Intro allocations -----------------------
     # ---------------------------------------------
-    q = size(G, 2) #Number of penalized covariates
-    p = size(X, 2) - 1 #Number of unpenalized covariates (does not include intercept)
-    m = size(Z, 2) #Number of covariates associated with random effects
-    XG = [X G]
+    XG = [X G] # Merging unpenalized and penalized design matrices
     
     #Grouped data
     Zgrp, XGgrp, ygrp = Matrix[], Matrix[], Vector[]
@@ -398,14 +391,13 @@ function lmmlasso(G::Matrix{Real}, X::Matrix{Real}, y::Vector{Real}, grp::Vector
         push!(Zgrp, Zᵢ); push!(XGgrp, XGᵢ); push(ygrp, yᵢ)
     end
     
+
     # --- Initializing parameters ---
     # ---------------------------------------------
-    if y === nothing
+    if init_coef === nothing
         #Initialize fixed effect parameters using Lasso that ignores random effects
-        Random.seed!(Control.seed)
-        lassopath = fit(LassoPath, [X[:,2:end] G], y; penalty_factor=[zeros(p); ones(q)])
+        lassopath = fit(LassoModel, XG[:,Not(1)], y; penalty_factor=[zeros(p); ones(q)], select = MinCVmse(Kfold(n_tot, 10)))
         fpars = coef(lassopath; select=MinCVmse(lassopath, 10)) #Fixed effects
-
         #Initialize covariance parameters
         L, σ² = cov_start(XGgrp, ygrp, Zgrp, fpars)
     else
@@ -532,8 +524,6 @@ function lmmlasso(G::Matrix{Real}, X::Matrix{Real}, y::Vector{Real}, grp::Vector
 
     end
 end
-
-
 
 
 end
