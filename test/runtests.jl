@@ -11,7 +11,7 @@ using Parameters
 using RCall
 using MLBase
 
-include("../src/HighDimMixedModels.jl")
+include("../src/HighDimMixedModels.jl3")
 include("../src/simulations.jl")
 import Main.HighDimMixedModels as hdmm
 import Main.simulations as sim
@@ -114,7 +114,7 @@ end
 
 @testset "starting parameters" begin
 
-    my_start1 = hdmm.cov_start(XGgrp, ygrp, Zgrp, β)
+    start1 = hdmm.cov_start(XGgrp, ygrp, Zgrp, β)
     start2 = hdmm.cov_start(XGgrp, ygrp, Zgrp, lassomod)
     start3 = hdmm.cov_start(XGgrp, ygrp, Zgrp, lassomod_nopen)
     start4 = hdmm.cov_start(XGgrp, ygrp, Zgrp, lassomod_yfixed)
