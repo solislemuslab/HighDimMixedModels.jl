@@ -1,302 +1,16 @@
 module HighDimMixedModels
 
-using LinearAlgebra
-using Random
-using Lasso #Needed to get initial estimates of the fixed effects
-using Optim #Needed for univariate optimization in coordinated gradient descent algorithm
-using InvertedIndices #Allows negative indexing, like in R
+export lmmlasso
+
+include("helpers.jl")
 using Parameters #Supplies macro for structs with default field values
-using MLBase #Supplies k-fold cross validation for initial lasso fit
-
-"""
-Returns covariance matrices of the responses, by group
-
-ARGUMENTS
-- L :: Parameters for random effect covariance matrix (can be scalar, vector, or lower triangular matrix)
-- Zgrp :: Vector of random effects design matrix for each group
-- σ² :: Variance of error
-
-OUTPUT
-- Vgrp :: List of length the number of groups, each of whose elements is the covariance matrix of the responses within a group
-"""
-function Vgrp(L, Zgrp, σ²)
-    q = size(Zgrp[1])[2]
-
-    if length(L) == 1
-        Ψ = (L^2)I(q)
-    elseif isa(L, Vector) && length(L) == q 
-        Ψ = Diagonal(L.^2)
-    else
-        Ψ = L*L' 
-    end
-    
-    Vgrp = Matrix[]
-    for Zᵢ in Zgrp
-        nᵢ = size(Zᵢ)[1]
-        push!(Vgrp, Symmetric(Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ))) #Symmetric used to adjust for floating point error 
-    end
-    return Vgrp 
-end
-
-
-"""
-Calculates residuals (list of residuals for each group) 
-"""
-function resid(Xgrp, ygrp, β, active_set = 1:length(β))
-    Xactgrp = map(X -> X[:,active_set], Xgrp)
-    residgrp = ygrp .- Xactgrp.*[β[active_set]]
-    return residgrp
-end
-
-"""
-Calculates x'M⁻¹x, where M is psd symmetric matrix
-"""
-quad_form_inv(M, x) = dot(x, cholesky(M)\x) 
-#M will be one of the elements of Vgrp, so it should be pd
-#We should probably implement a check for this, though 
-
-"""
-Calculates x'M⁻¹y, where M is psd symmetric matrix
-"""
-quad_form_inv2(M,x,y) = dot(x, cholesky(M)\y)
-#M will be one of the elements of Vgrp, so it should be pd
-#We should probably implement a check for this, though 
-
-"""
-Calculates the negative log-likelihod 
--l(ϕ̃) = -l(β, θ, σ²) = .5(Ntot*log(2π) + log|V| + (y-xβ)'V⁻¹(y-Xβ)) 
-
-ARGUMENTS
-- Vgrp :: Vector of length the number of groups, each of whose elements is the covariance matrix of the responses within a group
-- ygrp :: Vector of vector of responses for each group
-- X :: Vector of fixed effect design matrices for each group
-- β :: Fixed effects
-
-OUTPUT
-- Value of the negative log-likelihood
-"""
-function negloglike(Vgrp, ygrp, Xgrp, β)
-
-    detV = sum(map(x -> logabsdet(x)[1], Vgrp))
-    residgrp = resid(Xgrp, ygrp, β)
-    quadgrp = quad_form_inv.(Vgrp, residgrp)
-    Ntot = sum(length.(ygrp))
-    return .5(Ntot*log(2π) + detV + sum(quadgrp)) 
-
-end
-
-"""
-Finds an initial value for the variance and covariance parameters 
-
-ARGUMENTS
-- Xgrp :: Vector of fixed effect design matrices for each group
-- ygrp :: Vector of vector of responses for each group
-- Zgrp :: Vector of random effects design matrix for each group
-- β :: Initial iterate for fixed effect parameter vector (computed with Lasso ignoring group structure)
-
-OUTPUT
-- Assuming β is true fixed effect vector, MLE estimate of scalar L and scalar σ² as tuple (L, σ²)
-
-"""
-function cov_start(Xgrp, ygrp, Zgrp, β)
-    
-    # It can be shown that if we know η = sqrt(Ψ/σ²) and β, the MLE for σ² is 
-    # given by the below function
-
-    function σ²hat(Xgrp, ygrp, Zgrp, β, η) 
-        Ṽgrp = Vgrp(η, Zgrp, 1)
-        residgrp = resid(Xgrp, ygrp, β)
-        quadgrp = quad_form_inv.(Ṽgrp, residgrp)
-        Ntot = sum(length.(ygrp))
-        σ² = sum(quadgrp)/Ntot
-        return(σ²)
-    end
-    
-    # We can now profile the likelihood and optimize with respect to η 
-
-    function profile(η)
-        σ² = σ²hat(Xgrp, ygrp, Zgrp, β, η)
-        L = η*sqrt(σ²)
-        negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β) 
-    end
-
-    result = optimize(profile, 0.0001, 1.0e4) #will need to fix
-    
-    if Optim.converged(result)
-        η = Optim.minimizer(result)
-    else
-        error("Convergence for η not reached")
-    end
-
-    σ² = σ²hat(Xgrp, ygrp, Zgrp, β, η)
-    L = η*sqrt(σ²)
-    return L, σ²
-
-end
-
-
-"""
-Calculates active_set entries of the diagonal of Hessian matrix for fixed effect parameters 
-and updates `hess_diag` with these values--see 
-"""
-function hessian_diag!(Vgrp, Xactgrp, active_set, hess_diag)
-    quadgrp = quad_form_inv.(Vgrp, Xactgrp) 
-    hess_diag[active_set] = quadgrp
-    return nothing 
-end
-
-
-"""
-Soft Threshold
-"""
-soft_thresh(z,g) = sign(z)*max(abs(z)-g,0)
-
-
-"""
-Armijo Rule
-"""
-function armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hold, hnew, cost, p, converged)
-    fparnew = copy(fpars)
-   
-    #Calculate dk
-    grad = fpars[j]*hold - cut
-    if j in 1:p+1
-        dk = -grad/hnew
-    else
-        dk = median([(λ - grad)/hnew, -fpars[j], (-λ - grad)/hnew])
-    end
-
-    if dk!=0
-        #Calculate Δk
-        if j in 1:p+1
-            Δk = dk*grad + control.γ*dk^2*hnew
-        else
-            Δk = dk*grad + control.γ*dk^2*hnew + λ*(abs(fpars[j]+dk)-abs(fpars[j]))
-        end
-        
-        #Armijo line search
-        for l in 0:control.max_armijo
-            fparsnew[j] = fpars[j] + control.a_init*control.Δ^l*dk
-            costnew = negloglike(Vgrp, ygrp, Xgrp, fparnew) + λ*norm(fparsnew[p+2:end], 1)
-            addΔ = control.a_init*control.Δ^l*control.ρ*Δk
-            if costnew <= cost + addΔ
-                fpars[j] = fparsnew[j]
-                cost = costnew
-                break 
-            end
-            if l == control.max_armjio
-                trace > 2 && println("Armijo for coordinate $(j) of fixed parameters not successful") 
-                converged = converged+2 
-            end
-        end
-    end
-    
-    return (fpars = fpars , cost = cost, converged = converged)
-end
-
-""" 
-Update of L for identity covariance structure
-""" 
-function L_ident_update(Xgrp, ygrp, Zgrp, β, σ², var_int, thres)
-
-    profile(L) = negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β)
-    result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
-    
-    Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
-    min = Optim.minimizer(result)
-
-    if min < thres
-        L = 0
-        println("L was set to 0 (no group variation)")
-    else
-        L = min
-    end
-
-    return L
-end
-
-
-"""
-Update of coordinate s of L for diagonal covariance structure
-
-ARGUMENTS
-- L :: A vector of parameters which will be updated by the function
-- s :: The coordinate of L that is being updated (number between 1 and length(L))
-"""
-function L_diag_update!(L, Xgrp, ygrp, Zgrp, β, σ², s, var_int = (0, 1e6), thres=1e-4)
-    
-    Lcopy = copy(L)
-    
-    function profile(x)
-        Lcopy[s] = x 
-        negloglike(Vgrp(Lcopy, Zgrp, σ²), ygrp, Xgrp, β) 
-    end
-    result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
-
-    Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
-    min = Optim.minimizer(result)
-    
-    if min < thres
-        L[s] = 0
-        println("$(s) coordinate of L was set to 0")
-    else
-        L[s] = min
-    end
-
-    return Nothing
-
-end
-
-""" 
-Update of L for general symmetric positive definite covariance structure
-ARGUMENTS
-- L :: A lower triangular matrix of parameters which will be updated by the function
-- coords :: Tuple representing the coordinates of the entry of L that is being updated
-"""
-function L_sym_update!(L, Xgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int, thres)
-    
-    Lcopy = copy(L)
-    int = coords[1]==cords[2] ? var_int : cov_int #Are we minimizing a covariance parameter or a variance parameters
-    function profile(x)
-        Lcopy[coords[1], coords[2]] = x 
-        negloglike(Vgrp(Lcopy, Zgrp, σ²), ygrp, Xgrp, β) 
-    end
-
-    result = optimize(profile, int[1], int[2]) #Will need to fix
-
-    Optim.converged(result) || error("Minimization with respect to $(coords) entry of L failed to converge")
-    min = Optim.minimizer(result)
-    
-    if min < thres
-        L[coords[1], coords[2]] = 0
-        println("$(coords) entry of L was set to 0")
-    else
-        L[coords[1], coords[2]] = min
-    end
-
-    return Nothing
-end
-
-"""
-Update of σ²
-"""
-function σ²update(Xgrp, ygrp, Zgrp, β, L, var_int)
-    
-    profile(σ²) = negloglike(Vgrp(L, Zgrp, σ²), ygrp, Xgrp, β)
-    result = optimize(profile, var_int[1]^2, var_int[2]^2) #Will need to fix
-    
-    Optim.converged(result) || error("Minimization with respect to σ² failed to converge")
-
-    return Optim.minimizer(result)
-
-end
 
 """
 Algorithm Hyper-parameters
 
 - tol :: Convergence tolerance
 - seed :: Random seed for cross validation for estimating initial fixed effect parameters using Lasso
-- trace :: Integer. 1 prints no output, 2 prints warnings, and 3 prints the current iterate and function value and warnings
+- trace :: Integer. 1 prints no output, 2 prints warnings, and 3 prints the objective function values during the algorithm and warnings
 - max_iter :: Integer. Maximum number of iterations
 - max_armijo :: Integer. Maximum number of steps in Armijo rule algorithm. If the maximum is reached, algorithm doesn't update current coordinate and proceeds to the next coordinate
 - act_number :: Integer between 1 and 5. We will only update all fixed effect parameters every act_number iterations. Otherwise, we update only the parameters in thea current active set.
@@ -343,17 +57,18 @@ Positional:
 - Z :: Design matrix for random effects (optional, default is all columns of X)
 Keyword:
 - λ :: Positive regularizing penalty (optional, default is 10.0)
+- weights :: Vector of length number of penalized coefficients. Strength of penalty of covariate j is λ/wⱼ   
 - init_coef :: Tuple with three elements: starting value for fixed effects, random effect, and error variance parameters
-- Ψstr :: One of :ident, :diag, :sym, specifying covariance structure of random effects. Default is :diag.
+- Ψstr :: One of "diag" (default), "ident", or "sym", specifying covariance structure of random effects 
 - Control :: Struct with fields for hyperparameters of the algorithm
 
 OUTPUT
 - Fitted model
 """
 function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
-    λ::Float64=10.0, init_coef::Union{Vector, Nothing}=nothing, Ψstr::Symbol=:diag, Control=Control()) 
+    λ::Float64=10.0, weights::Vector{Real}=fill(1, size(G, 2)), init_coef::Union{Vector, Nothing}=nothing, 
+    Ψstr::String="diag", Control=Control()) 
 
-    Random.seed!(Control.seed)
     # --- Introductory checks --- 
     # ---------------------------------------------
     N = length(y) #Total number of observations
@@ -391,44 +106,47 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         push!(Zgrp, Zᵢ); push!(XGgrp, XGᵢ); push(ygrp, yᵢ)
     end
     
-
     # --- Initializing parameters ---
     # ---------------------------------------------
     if init_coef === nothing
-        #Initialize fixed effect parameters using Lasso that ignores random effects
-        lassopath = fit(LassoModel, XG[:,Not(1)], y; penalty_factor=[zeros(p); ones(q)], select = MinCVmse(Kfold(n_tot, 10)))
-        fpars = coef(lassopath; select=MinCVmse(lassopath, 10)) #Fixed effects
+        Random.seed!(Control.seed)
+        #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
+        lassopath = fit(LassoModel, XG[:,Not(1)], y; select = MinCVmse(Kfold(n_tot, 10)))
+        βstart = coef(lassopath; select=MinCVmse(lassopath, 10)) #Fixed effects
         #Initialize covariance parameters
-        L, σ² = cov_start(XGgrp, ygrp, Zgrp, fpars)
+        Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, fpars)
     else
-        fpars, L, σ² = init_coef
+        βstart, Lstart, σ²start = init_coef
     end
-    β = fpars[(p+2):end]
 
+    if Ψstr == "sym"
+        Lstart = LowerTriangular(L*I(m))
+    elseif Ψstr == "diag"
+        Lstart = fill(L, m) 
+    elseif Ψstr != "ident"
+        error("ψstr must be one of \"sym\", \"diag\", or \"ident\"")
+    end
 
     # --- Calculate objective function for the starting values ---
     # ---------------------------------------------
     Vgrp = Vgrp(L, Zgrp, σ²)
-    neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
-    cost = neglike + λ*norm(β, 1)
-    println("Cost at initialization: $(cost)")
+    neglikestart = negloglike(Vgrp, ygrp, XGgrp, βstart)
+    coststart = neglikestart + λ*norm(βstart[(p+2):end], 1)./weights
+    trace == 3 && println("Cost at initialization: $(coststart)")
 
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
 
-    #Some allocations 
-    if Ψstr == :sym
-        L = LowerTriangular(L*I(m))
-    elseif Ψstr == :diag
-        L = fill(L, m) 
-    elseif Ψstr != :ident
-        error("ψstr must be one of :sym, :diag, or :ident")
-    end
-    
-
     #Algorithm allocations
-    hess_diag = zeros(p+q+1)
+    βiter = βstart
+    σ²iter = σ²start
+    Liter = Lstart
+    costiter = coststart
+    hess0 = zeros(p+q+1)
+    convβ <- norm(βiter)^2
+    conv <- norm(L)^2 + 
+    fctIter <- convFct <- fctStart
     converged = false
     counter_in = 0
     counter = 0

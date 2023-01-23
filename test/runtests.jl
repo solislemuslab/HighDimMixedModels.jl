@@ -1,4 +1,5 @@
 using Revise
+import HighDimMixedModels as hdmm
 using Random
 using Distributions
 using LinearAlgebra
@@ -11,9 +12,7 @@ using Parameters
 using RCall
 using MLBase
 
-include("../src/HighDimMixedModels.jl3")
 include("../src/simulations.jl")
-import Main.HighDimMixedModels as hdmm
 import Main.simulations as sim
 
 # Simulate a dataset 
@@ -33,7 +32,7 @@ R"XG = cbind(X,G)"
 
 # True parameters 
 βun = [1,2]
-βpen = [4,3,0,0,5]
+βpen = [4,3,0,0,0]
 β = [βun; βpen]
 L = LowerTriangular([25 0; 0 3])
 σ² = 1
