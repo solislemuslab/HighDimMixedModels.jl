@@ -209,6 +209,12 @@ git-tree-sha1 = "884477b9886a52a84378275737e2823a5c98e349"
 uuid = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 version = "1.8.1"
 
+[[HighDimMixedModels]]
+deps = ["Distributions", "InvertedIndices", "Lasso", "LinearAlgebra", "MLBase", "Optim", "Parameters", "Pkg", "Random", "StatsBase"]
+path = ".."
+uuid = "5d0d0550-ba84-42d6-a33e-4f9cf65119aa"
+version = "0.1.0"
+
 [[HypergeometricFunctions]]
 deps = ["DualNumbers", "LinearAlgebra", "OpenLibm_jll", "SpecialFunctions", "Test"]
 git-tree-sha1 = "709d864e3ed6e3545230601f94e11ebc65994641"
