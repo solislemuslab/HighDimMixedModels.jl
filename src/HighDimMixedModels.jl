@@ -1,6 +1,7 @@
 module HighDimMixedModels
 
 export lmmlasso
+export Control
 
 include("helpers.jl")
 using Parameters #Supplies macro for structs with default field values
@@ -60,26 +61,26 @@ Keyword:
 - weights :: Vector of length number of penalized coefficients. Strength of penalty of covariate j is λ/wⱼ   
 - init_coef :: Tuple with three elements: starting value for fixed effects, random effect, and error variance parameters
 - Ψstr :: One of "diag" (default), "ident", or "sym", specifying covariance structure of random effects 
-- Control :: Struct with fields for hyperparameters of the algorithm
+- control :: Struct with fields for hyperparameters of the algorithm
 
 OUTPUT
 - Fitted model
 """
 function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
     λ::Float64=10.0, weights::Vector{Real}=fill(1, size(G, 2)), init_coef::Union{Vector, Nothing}=nothing, 
-    Ψstr::String="diag", Control=Control()) 
+    Ψstr::String="diag", control=Control()) 
 
     # --- Introductory checks --- 
     # ---------------------------------------------
-    N = length(y) #Total number of observations
-    q = size(G, 2) #Number of penalized covariates 
-    p = size(X, 2) - 1 #Number of unpenalized covariates 
-    m = size(Z, 2) - 1 #Number of covariates associated with random effects 
+    N = length(y) # Total number of observations
+    q = size(G, 2) # Number of penalized covariates 
+    p = size(X, 2) # Number of unpenalized covariates 
+    m = size(Z, 2) # Number of covariates associated with random effects 
 
-    @assert size(G, 1) == n_tot "G and y incompatable dimension"
-    @assert size(X, 1) == n_tot "X and y incompatable dimension"
-    @assert size(Z, 1) == n_tot "Z and y incompatable dimension"
-    @assert length(grp) == n_tot "grp and y incompatable dimension"
+    @assert size(G, 1) == N "G and y incompatable dimension"
+    @assert size(X, 1) == N "X and y incompatable dimension"
+    @assert size(Z, 1) == N "Z and y incompatable dimension"
+    @assert length(grp) == N "grp and y incompatable dimension"
 
     @assert X[:,1] == ones(n_tot) "First column of X must be all ones"
     groups = unique(grp)
@@ -88,9 +89,9 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     
     @assert λ > 0 "λ is regularization parameter, must be positive"
 
-    @assert ψstr in [:ident, :diag, :sym] "ψstr must be one of :ident, :diag, or :sym"
-    Control::HighDimMixedModels.Control 
-    @assert Control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
+    @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
+    control::HighDimMixedModels.Control 
+    @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
     if init_coef !== nothing
         @assert length(init_coef) == 3 "init_coef must be of length 3"
     end
@@ -109,7 +110,7 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     # --- Initializing parameters ---
     # ---------------------------------------------
     if init_coef === nothing
-        Random.seed!(Control.seed)
+        Random.seed!(control.seed)
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
         lassopath = fit(LassoModel, XG[:,Not(1)], y; select = MinCVmse(Kfold(n_tot, 10)))
         βstart = coef(lassopath; select=MinCVmse(lassopath, 10)) #Fixed effects
@@ -120,19 +121,20 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     end
 
     if Ψstr == "sym"
-        Lstart = LowerTriangular(L*I(m))
+        Lstart = LowerTriangular(L*I(m+1))
     elseif Ψstr == "diag"
-        Lstart = fill(L, m) 
+        Lstart = fill(L, m+1) 
     elseif Ψstr != "ident"
         error("ψstr must be one of \"sym\", \"diag\", or \"ident\"")
     end
 
     # --- Calculate objective function for the starting values ---
     # ---------------------------------------------
-    Vgrp = Vgrp(L, Zgrp, σ²)
-    neglikestart = negloglike(Vgrp, ygrp, XGgrp, βstart)
-    coststart = neglikestart + λ*norm(βstart[(p+2):end], 1)./weights
-    trace == 3 && println("Cost at initialization: $(coststart)")
+    Vgrp = var_y(Lstart, Zgrp, σ²start)
+    invVgrp = [inv(V) for V in Vgrp]
+    neglike_start = negloglike(invVgrp, ygrp, XGgrp, βstart)
+    fct_start = neglike_start + λ*norm(βstart[(p+1):end], 1)./weights
+    control.trace > 2 && println("Cost at initialization: $fct_start")
 
 
     # --- Coordinate Gradient Descent -------------
@@ -142,24 +144,25 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     βiter = βstart
     σ²iter = σ²start
     Liter = Lstart
-    costiter = coststart
-    hess0 = zeros(p+q+1)
-    convβ <- norm(βiter)^2
-    conv <- norm(L)^2 + 
-    fctIter <- convFct <- fctStart
+    fct_iter = fct_start
+    convβ = norm(βiter)^2
+    conv_cov = norm(Liter)^2 +  σ²iter
+    conv_fct = fct_iter
+
     converged = false
     counter_in = 0
     counter = 0
 
-    while converged == false 
+    while (converged == false) && (control.max_iter > counter)
+        
         counter += 1
-        Control.trace == 2 && println("Outer iteration $counter") 
+        counter == control.max_iter && println("Maximum of $counter iterations reached")
 
         #Variables that are being updated
-        fparsold = copy(fpars)
-        Lold = copy(L)
-        σ²old = σ² 
-        costold = cost
+        βold = βiter
+        Lold = Liter
+        σ²old = σ²iter 
+        fct_old = fct_iter
 
 
         #---Optimization with respect to fixed effect parameters ----------------------------
@@ -167,27 +170,24 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
 
         #We'll only update fixed effect parameters in "active_set"--
         #see  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
-        active_set = findall(fpars .== 0)
+        active_set = findall(β .!= 0)
         
-        if counter_in == 0 || counter_in > Control.act_min 
+        if counter_in == 0 || counter_in > control.act_min 
             active_set = 1:(p+q+1)
             counter_in = 1
         else 
             counter_in += 1
         end
 
-        XaugGactgrp = map(X -> X[:,active_set], XaugGgrp)
-        hessian_diag!(Vgrp, XaugGactgrp, active_set, hess_diag)
-        hess_diag_untrunc = copy(hess_diag)
-        hess_diag[active_set] = max.(min.(hess_diag[active_set], Control.lower), Control.upper)
+        hess = hessian_diag(XGgrp, invVgrp, active_set)
+        hess_untrunc = copy(hess)
+        hess[active_set] = min.(max.(hess[active_set], control.lower), control.upper)
+
 
         #Update fixed effect parameters that are in active_set
         for j in active_set 
 
-            XaugGgrpⱼ = map(X -> X[:j], XaugGgrp)
-            XaugGgrp₋ⱼ = map(X -> X[:,Not(j)], XaugGgrp)
-            rgrp₋ⱼ = resid(XaugGgrp₋ⱼ, ygrp, fpars[Not(j)])
-            cut = sum(quad_form_inv2(Vgrp, rgrp₋ⱼ, XaugGgrpⱼ)) 
+            cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
             if hess_diag[j] == hess_diag_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:p+1
@@ -201,41 +201,42 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
                 cost = arm.cost
                 converged = arm.converged
             end
-            Control.trace > 3 && println(cost) 
+            control.trace > 3 && println(cost) 
         end
         β = fpars[(p+2):end] #Pull out new penalized coefficients
 
-        Control.trace > 3 && println("------------------------")
+        control.trace > 3 && println("------------------------")
 
 
         #---Optimization with respect to covariance parameters ----------------------------
         #------------------------------------------------------------------------------------
 
         # calculations before the covariance optimization
-        active_set = findall(fpars .== 0)
+        active_set = findall(fpars .!= 0)
         resgrp = resid(XaugGgrp, ygrp, fpars, active_set)
         
         # Optimization of L
         if ψstr == :ident
-            L = L_ident_update(XaugGgrp, ygrp, Zgrp, fpars, σ², Control.var_int, Control.thres)
+            L = L_ident_update(XaugGgrp, ygrp, Zgrp, fpars, σ², control.var_int, control.thres)
         elseif ψstr == :diag
-            foreach( s -> L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s, Control.var_int, Control.thres), 1:m)
+            foreach( s -> L_diag_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², s, control.var_int, control.thres), 1:m)
         else  #ψstr == :sym
             tuples = collect(Iterators.product(1:m, 1:m)) #Matrix of tuples
             tuples = tuples[tril!(trues((m,m)), 0)] #Vector of tuples (i, j), where i≥j
-            foreach( coords -> L_sym_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², coords, Control.var_int, Control.cov_int, Control.thres), 
+            foreach( coords -> L_sym_update!(L, XaugGgrp, ygrp, Zgrp, fpars, σ², coords, control.var_int, control.cov_int, control.thres), 
                     tuples)
         end
 
-        Control.trace > 3 && println("------------------------")
+        control.trace > 3 && println("------------------------")
 
         # Optimization of σ²
-        σ² = σ²update(XaugGgrp, ygrp, Zgrp, fpars, L, Control.var_int)
-        Control.trace > 3 && println("------------------------")
+        σ² = σ²update(XaugGgrp, ygrp, Zgrp, fpars, L, control.var_int)
+        control.trace > 3 && println("------------------------")
 
         #Calculate new cost function
-        Vgrp = V(L, Zgrp, σ²)
-        neglike = negloglike(Vgrp, ygrp, XaugGgrp, fpars)
+        Vgrp = Vgrp(L, Zgrp, σ²)
+        invVgrp = [inv(V) for V in Vgrp]
+        neglike = negloglike(invVgrp, ygrp, XaugGgrp, fpars)
         cost = neglike + λ*norm(β, 1)
 
         #Compare to previous cost function...

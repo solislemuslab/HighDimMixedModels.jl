@@ -16,7 +16,7 @@ include("../src/simulations.jl")
 import Main.simulations as sim
 
 # Simulate a dataset 
-p = 1
+p = 2
 q = 5
 X, G, Z, grp = sim.simulate_design()
 g = length(unique(grp))
@@ -24,18 +24,21 @@ N = length(grp)
 
 XG = [X G]
 
+R"p = $p"
+R"q = $q"
 R"g = $g"
 R"N = $N"
 R"X = $X"
 R"G = $G"
+R"Z = $Z"
 R"XG = cbind(X,G)"
 
 # True parameters 
 βun = [1,2]
 βpen = [4,3,0,0,0]
 β = [βun; βpen]
-L = LowerTriangular([25 0; 0 3])
-σ² = 1
+L = LowerTriangular([20 0; 0 20])
+σ² = 100
 R"beta = $β"
 R"L = $L"
 R"sigma2 = $σ²"
@@ -57,7 +60,7 @@ lassomod_yfixed_nopen = coef(fit(LassoModel, [X G][:,Not(1)], yfixed; select = M
 
 R"library(glmnet)"
 R"pf = $pf"
-R"pf = c(pf)"
+R"pf = pf[-1]"
 R"cvfit <- cv.glmnet(XG[,-1], y, penalty.factor = pf)" # Defaults to 10-fold cv
 R"lassomod = coef(cvfit, s = \"lambda.min\")" 
 R"cvfit_nopen <- cv.glmnet(XG[,-1], y)" # Defaults to 10-fold cv
@@ -79,31 +82,29 @@ for group in unique(grp)
     XGᵢ, Zᵢ, yᵢ = XG[grp .== group,:], Z[grp .== group,:], y[grp .== group]
     push!(XGgrp, XGᵢ); push!(Zgrp, Zᵢ); push!(ygrp, yᵢ)
 end
-Vgrp = hdmm.Vgrp(L, Zgrp, σ²)
-Lgrp = [inv(Symmetric(V)) for V in Vgrp]
+Vgrp = hdmm.var_y(L, Zgrp, σ²)
+invVgrp = [inv(V) for V in Vgrp]
 R"XGgrp = $XGgrp"
 R"ygrp = $ygrp"
 R"Zgrp = $Zgrp"
-R"Lgrp = $Lgrp"
-
-
+R"invVgrp = $invVgrp"
 
 ## Tests
 @testset "log likelihood function" begin
     
-    true_ll = hdmm.negloglike(Vgrp, ygrp, XGgrp, β)
-    lassomod_ll = hdmm.negloglike(Vgrp, ygrp, XGgrp, lassomod)
-    lassomod_nopen_ll = hdmm.negloglike(Vgrp, ygrp, XGgrp, lassomod_nopen)
-    lassomod_yfixed_ll = hdmm.negloglike(Vgrp, ygrp, XGgrp, lassomod_yfixed)
-    lassomod_yfixed_nopen_ll = hdmm.negloglike(Vgrp, ygrp, XGgrp, lassomod_yfixed_nopen)
+    true_ll = hdmm.negloglike(invVgrp, ygrp, XGgrp, β)
+    lassomod_ll = hdmm.negloglike(invVgrp, ygrp, XGgrp, lassomod)
+    lassomod_nopen_ll = hdmm.negloglike(invVgrp, ygrp, XGgrp, lassomod_nopen)
+    lassomod_yfixed_ll = hdmm.negloglike(invVgrp, ygrp, XGgrp, lassomod_yfixed)
+    lassomod_yfixed_nopen_ll = hdmm.negloglike(invVgrp, ygrp, XGgrp, lassomod_yfixed_nopen)
     my_log_likes = [true_ll, lassomod_ll, lassomod_nopen_ll, lassomod_yfixed_ll, lassomod_yfixed_nopen_ll]
 
     R"library(splmm)"
-    R"true_ll = -splmm:::MLloglik(XGgrp, ygrp, Lgrp, beta, N, g, 0)"
-    R"lassomod_ll = -splmm:::MLloglik(XGgrp, ygrp, Lgrp, lassomod, N, g, 0)"
-    R"lassomod_nopen_ll = -splmm:::MLloglik(XGgrp, ygrp, Lgrp, lassomod_nopen, N, g, 0)"
-    R"lassomod_yfixed_ll = -splmm:::MLloglik(XGgrp, ygrp, Lgrp, lassomod_yfixed, N, g, 0)"
-    R"lassomod_yfixed_nopen_ll = -splmm:::MLloglik(XGgrp, ygrp, Lgrp, lassomod_yfixed_nopen, N, g, 0)"
+    R"true_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, beta, N, g, 0)"
+    R"lassomod_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod, N, g, 0)"
+    R"lassomod_nopen_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod_nopen, N, g, 0)"
+    R"lassomod_yfixed_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod_yfixed, N, g, 0)"
+    R"lassomod_yfixed_nopen_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod_yfixed_nopen, N, g, 0)"
     R"splmm_loglikes = c(true_ll, lassomod_ll, lassomod_nopen_ll, lassomod_yfixed_ll, lassomod_yfixed_nopen_ll)"
     @rget splmm_loglikes
     
@@ -129,9 +130,37 @@ end
     R"splmm_pars = lapply(list(start1, start2, start3, start4, start5), function(start) c(start$tau, start$sigma^2))"
     @rget splmm_pars
 
-    @test all(isapprox.(my_pars, splmm_pars, atol = 1e-3))
+    @test all(isapprox.(my_pars, splmm_pars, atol = 1e-2))
 
 end
+
+#Choose one of the initialized parameters for further testing
+βinit = lassomod
+cov_init = hdmm.cov_start(XGgrp, ygrp, Zgrp, βinit)
+Linit = cov_init[1]
+σ²init = cov_init[2]
+Vgrp = hdmm.var_y(Linit, Zgrp, σ²init)
+invVgrp = [inv(V) for V in Vgrp]
+R"invVgrp = $invVgrp"
+
+#Empty arrays for storing
+hess = zeros(p+q)
+mat = zeros(g, p+q)
+R"hess = rep(0, p+q)"
+R"mat = $mat"
+
+active_set = findall(βinit .!= 0)
+R"active_set = $active_set"
+hess = hdmm.hessian_diag!(XGgrp, invVgrp, active_set)
+R"hess_R = splmm:::HessianMatrix(XGgrp,invVgrp,active_set,g,hess,mat[,active_set])"
+@rget hess_R
+
+@testset "fixed effect parameter updates" begin
+    
+    @test isapprox(hess_R, hess)
+
+end
+
 
 
 

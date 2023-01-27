@@ -10,23 +10,23 @@ Simulates fixed and random effect design matrices
 ARGUMENTS
 - g :: Number of groups
 - n :: Vector of group sizes
-- p :: Number of unpenalized predictors 
-- q :: Number of penalized predictors 
+- p :: Number of unpenalized fixed effect parameters (includes one for intercept)
+- q :: Number of penalized fixed effect parameters
 - m :: Of the unpenalized predictors, number which have associated random effects
 - rho :: Correlation between fixed effect predictors 
 - seed :: Random seed
 
 OUTPUT:
-- X :: Matrix of dimension Ntot by (p+1)
+- X :: Matrix of dimension Ntot by p
 - G :: Matrix of dimension Ntot by q
-- Z :: Matrix of dimension Ntot by (m+1)
+- Z :: Matrix of dimension Ntot by m
 - grp :: grouping variable, vector of length Ntot with N distinct string values
 """
-function simulate_design(n=fill(6, 20), p=1, q=5, m=p, rho=0.2; seed=54)
+function simulate_design(n=fill(6, 20), p=2, q=5, m=p, rho=0.2; seed=54)
    
     Random.seed!(seed)
     N = sum(n) # Total number of observations
-    n_pred = q + p # Total number of predictors
+    n_pred = q + p - 1 # Total number of predictors (doesn't include intercept)
 
     # Create covariance matrix for design
     xcov = Matrix{Float64}(undef, n_pred, n_pred)
@@ -35,13 +35,13 @@ function simulate_design(n=fill(6, 20), p=1, q=5, m=p, rho=0.2; seed=54)
         xcov[i, j] = rho^(abs(i-j))
     end
 
-    # Generate design matrices X and Z
+    # Generate design matrices X, G, and Z
     dist_x = MvNormal(zeros(n_pred), xcov) 
     full_pred = rand(dist_x, N)' # Matrix of dimensions Ntot by n_pred
     
-    X = hcat(fill(1, N), full_pred[:,1:p]) # Unpenalized design matrix with column of ones prepended for intercept
-    G = full_pred[:,(p+1):n_pred] # Penalized design matrix
-    Z = X[:, 1:(m+1)] # Random effect design matrix
+    X = hcat(fill(1, N), full_pred[:,1:(p-1)]) # Unpenalized design matrix with column of ones prepended for intercept
+    Z = X[:, 1:m] # Random effect design matrix
+    G = full_pred[:,p:end] # Penalized design matrix
 
     # Grouping variable 
     grp = string.(inverse_rle(1:length(n), n))
