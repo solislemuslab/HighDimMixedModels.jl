@@ -135,11 +135,11 @@ end
 end
 
 #Choose one of the initialized parameters for further testing
-βinit = lassomod
-cov_init = hdmm.cov_start(XGgrp, ygrp, Zgrp, βinit)
-Linit = cov_init[1]
-σ²init = cov_init[2]
-Vgrp = hdmm.var_y(Linit, Zgrp, σ²init)
+βiter = lassomod
+cov_iter = hdmm.cov_start(XGgrp, ygrp, Zgrp, βinit)
+Liter = cov_iter[1]
+σ²iter = cov_iter[2]
+Vgrp = hdmm.var_y(Liter, Zgrp, σ²iter)
 invVgrp = [inv(V) for V in Vgrp]
 R"invVgrp = $invVgrp"
 
@@ -149,9 +149,9 @@ mat = zeros(g, p+q)
 R"hess = rep(0, p+q)"
 R"mat = $mat"
 
-active_set = findall(βinit .!= 0)
+active_set = findall(βiter .!= 0)
 R"active_set = $active_set"
-hess = hdmm.hessian_diag!(XGgrp, invVgrp, active_set)
+hess = hdmm.hessian_diag(XGgrp, invVgrp, active_set)
 R"hess_R = splmm:::HessianMatrix(XGgrp,invVgrp,active_set,g,hess,mat[,active_set])"
 @rget hess_R
 
@@ -160,6 +160,12 @@ R"hess_R = splmm:::HessianMatrix(XGgrp,invVgrp,active_set,g,hess,mat[,active_set
     @test isapprox(hess_R, hess)
 
 end
+
+
+cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
+
+@testset "specialquad" begin
+    
 
 
 

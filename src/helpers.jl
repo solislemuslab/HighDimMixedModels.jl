@@ -81,7 +81,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
         invṼgrp = [inv(Ṽ) for Ṽ in Ṽgrp]
         residgrp = [y-XG*β for (y, XG) in zip(ygrp, XGgrp)]
         quadgrp = [resid'*invṼ*resid for (resid, invṼ) in zip(residgrp, invṼgrp)]
-        σ² = sum(quadgrp)/Ntot
+        σ² = sum(quadgrp)/sum(length.(ygrp))
         return(σ²)
     end
     
