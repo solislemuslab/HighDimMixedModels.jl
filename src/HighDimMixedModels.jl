@@ -57,18 +57,22 @@ Positional:
 - grp :: Vector of strings of same length as y assigning each observation to a particular group (REQUIRED)
 - Z :: Design matrix for random effects (optional, default is all columns of X)
 Keyword:
-- λ :: Positive regularizing penalty (optional, default is 10.0)
-- weights :: Vector of length number of penalized coefficients. Strength of penalty of covariate j is λ/wⱼ   
-- init_coef :: Tuple with three elements: starting value for fixed effects, random effect, and error variance parameters
+- penalty :: One of "scad" (default) or "lasso"
+- λ :: Positive regularizing penalty (default is 10.0)
+- scada :: Extra tuning parameter for the SCAD penalty (default is 3.7, ignored if penalty is "lasso"
+- weights :: Vector of length number of penalized coefficients. Strength of penalty on covariate j is λ/wⱼ (Default is vector of 1's)
+- init_coef :: Tuple of form (β, L, σ²) giving initial values for parameters. If unspecified, then inital values for parameters are 
+calculated as follows: first, cross-validated LASSO that ignores grouping structure is performed to obtain initial estimates of the 
+fixed effect parameters. Then, the random effect parameters are initialized as MLEs assuming the LASSO estimates are true fixed effect parameters.
 - Ψstr :: One of "diag" (default), "ident", or "sym", specifying covariance structure of random effects 
-- control :: Struct with fields for hyperparameters of the algorithm
+- control :: Struct with fields for hyperparameters of the algorithm 
 
 OUTPUT
 - Fitted model
 """
 function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
-    λ::Float64=10.0, weights::Vector{Real}=fill(1, size(G, 2)), init_coef::Union{Vector, Nothing}=nothing, 
-    Ψstr::String="diag", control=Control()) 
+    penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, weights::Vector{Real}=fill(1, size(G, 2)), 
+    init_coef::Union{Vector, Nothing}=nothing, Ψstr::String="diag", control=Control()) 
 
     # --- Introductory checks --- 
     # ---------------------------------------------
@@ -87,8 +91,10 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     g = length(groups) #Number of groups
     @assert g > 1 "Only one group, no covariance parameters can be estimated"
     
+    @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
     @assert λ > 0 "λ is regularization parameter, must be positive"
-
+    @assert weights .> 0 "Weights must be positive"
+    λ = λ ./ weigths
     @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
     control::HighDimMixedModels.Control 
     @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
@@ -128,12 +134,12 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         error("ψstr must be one of \"sym\", \"diag\", or \"ident\"")
     end
 
-    # --- Calculate objective function for the starting values ---
+    # --- Calculate cost for the starting values ---
     # ---------------------------------------------
     Vgrp = var_y(Lstart, Zgrp, σ²start)
     invVgrp = [inv(V) for V in Vgrp]
-    neglike_start = negloglike(invVgrp, ygrp, XGgrp, βstart)
-    fct_start = neglike_start + λ*norm(βstart[(p+1):end], 1)./weights
+    neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
+    fct_start = get_cost(neglike_start, βstart[(p+1):end], penalty, λ, scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
 
 
@@ -159,10 +165,10 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         counter == control.max_iter && println("Maximum of $counter iterations reached")
 
         #Variables that are being updated
-        βold = βiter
-        Lold = Liter
-        σ²old = σ²iter 
-        fct_old = fct_iter
+        βold = copy(βiter)
+        Lold = copy(Liter)
+        σ²old = copy(σ²iter) 
+        fct_old = copy(fct_iter)
 
 
         #---Optimization with respect to fixed effect parameters ----------------------------
@@ -173,7 +179,7 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         active_set = findall(β .!= 0)
         
         if counter_in == 0 || counter_in > control.act_min 
-            active_set = 1:(p+q+1)
+            active_set = 1:(p+q)
             counter_in = 1
         else 
             counter_in += 1
@@ -186,17 +192,19 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
 
         #Update fixed effect parameters that are in active_set
         for j in active_set 
-
+            λj = λ/weights[j]
             cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
-            if hess_diag[j] == hess_diag_untrunc[j] #Outcome of Armijo rule can be computed analytically
-                if j in 1:p+1
-                    fpar[j] = cut/hess_diag[j]
-                else
-                    fpar[j] = soft_thresh(cut, λ)/hess_diag[j]
+            if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
+                if j in 1:p
+                    βiter[j] = cut/hess_diag[j]
+                elseif penalty == "lasso" 
+                    βiter[j] = soft_thresh(cut, λj)/hess[j]
+                else #Scad penalty
+                    βiter[j] = scad_solution(cut, hess[j], λj, scada)
                 end 
             else #Must actually perform Armijo line search 
-                arm = armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hess_diag_untrunc[j], hess_diag[j], cost, p, converged)
+                arm = armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hess_untrunc[j], hess[j], cost, p, converged)
                 fpars = arm.fpars
                 cost = arm.cost
                 converged = arm.converged
@@ -236,8 +244,8 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         #Calculate new cost function
         Vgrp = Vgrp(L, Zgrp, σ²)
         invVgrp = [inv(V) for V in Vgrp]
-        neglike = negloglike(invVgrp, ygrp, XaugGgrp, fpars)
-        cost = neglike + λ*norm(β, 1)
+        neglike = get_negll(invVgrp, ygrp, XaugGgrp, fpars)
+        #cost = neglike + λ*norm(β, 1)
 
         #Compare to previous cost function...
 

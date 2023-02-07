@@ -94,13 +94,6 @@ function simulate_y(X, G, Z, grp, βun, βpen, L, σ²; seed=54)
 end
 
 
-
-
-
-
-
-
-
 end
 
 

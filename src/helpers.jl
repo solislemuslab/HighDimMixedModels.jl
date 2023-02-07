@@ -48,7 +48,7 @@ ARGUMENTS
 OUTPUT
 - Value of the negative log-likelihood
 """
-function negloglike(invVgrp, ygrp, XGgrp, β)
+function get_negll(invVgrp, ygrp, XGgrp, β)
 
     detV = sum([logabsdet(invV)[1] for invV in invVgrp])
     residgrp = [y-XG*β for (y, XG) in zip(ygrp, XGgrp)]
@@ -57,6 +57,42 @@ function negloglike(invVgrp, ygrp, XGgrp, β)
     return .5(Ntot*log(2π) - detV + sum(quadgrp)) 
 
 end
+
+"""
+Calculates the SCAD penalty
+"""
+function get_scad(βpen, λ, a) 
+    scad = copy(βpen)
+
+    for (j, β) in enumerate(βpen)
+        if abs(β) ≤ λ[j]
+            scad[j] = λ[j]*β
+        else if abs(β) ≤ a*λ[j]
+            scad[j] = (2*a*λ[j]*abs(β) - β^2 - λ[j]^2)/(2*(a-1))
+        else 
+            scad[j] = (λ^2)*(a+1)/2
+        end
+        
+    end
+
+    return sum(scad)
+end
+
+"""
+Calculates the objective function
+"""
+function get_cost(negll, βpen, penalty, λ, scada=3.7)
+    
+    cost = negll
+    
+    if penalty == "lasso"
+        cost += λ.*norm(βpen, 1)
+    else if penalty == "scad"
+        cost += get_scad(βpen, λ, scada)
+    return cost
+
+end 
+
 
 """
 Finds an initial value for the variance and covariance parameters 
@@ -91,7 +127,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
         σ² = σ²hat(XGgrp, ygrp, Zgrp, β, η)
         L = η*sqrt(σ²)
         invVgrp = [inv(V) for V in var_y(L, Zgrp, σ²)]
-        negloglike(invVgrp, ygrp, XGgrp, β) 
+        get_negll(invVgrp, ygrp, XGgrp, β) 
     end
 
     result = optimize(profile, 0.0001, 1.0e4) #will need to fix
@@ -147,20 +183,57 @@ Soft Threshold
 """
 soft_thresh(z,g) = sign(z)*max(abs(z)-g,0)
 
+"""
+Gets analytical solution for CGD iterate with SCAD penalty when the Hessian hasn't been truncated 
+"""
+function scad_solution(cut, hess, λ, a) 
+    
+    if abs(cut) > a*λ
+        β = cut/hess
+    else if abs(cut) ≤ 2λ
+        β = soft_thresh(cut, λ)/hess
+    else 
+        β = ((a-1)*cut - sign(cut)*a*λ)/(hess*(a-2))
+
+end
+
+"""
+"""
+function scad_dir(βj::Real, hessj::Real, grad, λj, a)
+
+    c = βj*hessj-grad
+
+    if c ≤ λj(hessj + 1)
+        d = -(λ + grad)/hessj
+    else if c > λ*a*hessj
+        d = -grad/hessj
+    else
+        d = (-grad*(a-1)-(a*λ - βj))/(hessj*(a-1)-1)
+    end
+    
+    return d
+end
+
+
+
 
 """
 Armijo Rule
 """
-function armijo(XGgrp, ygrp, Vgrp, fpars, j, cut, hold, hnew, cost, p, converged)
-    fparnew = copy(fpars)
+function armijo(XGgrp, ygrp, invVgrp, β::Vector{Real}, cut, 
+    hessj_untrunc::Real, hessj::Real, λj::Real, a, cost, p, converged, penalty)
+    
+    βnew = copy(β)
    
-    #Calculate dk
-    grad = fpars[j]*hold - cut
-    if j in 1:p+1
-        dk = -grad/hnew
-    else
-        dk = median([(λ - grad)/hnew, -fpars[j], (-λ - grad)/hnew])
-    end
+    #Calculate direction
+    grad = β[j]*hessj_untrunc - cut
+    
+    if j in 1:p
+        dir = -grad/hessj
+    else if penalty == "lasso"
+        dir = median([(λj - grad)/hessj, -β[j], (-λj - grad)/hessj])
+    else ##penalty is "Scad"
+        dir = scad_dir(β[j], hessj, grad, λj, a)
 
     if dk!=0
         #Calculate Δk
@@ -173,7 +246,7 @@ function armijo(XGgrp, ygrp, Vgrp, fpars, j, cut, hold, hnew, cost, p, converged
         #Armijo line search
         for l in 0:control.max_armijo
             fparsnew[j] = fpars[j] + control.a_init*control.Δ^l*dk
-            costnew = negloglike(Vgrp, ygrp, XGgrp, fparnew) + λ*norm(fparsnew[p+2:end], 1)
+            costnew = get_negll(Vgrp, ygrp, XGgrp, fparnew) + λ*norm(fparsnew[p+2:end], 1)
             addΔ = control.a_init*control.Δ^l*control.ρ*Δk
             if costnew <= cost + addΔ
                 fpars[j] = fparsnew[j]
@@ -195,7 +268,7 @@ Update of L for identity covariance structure
 """ 
 function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
 
-    profile(L) = negloglike(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
+    profile(L) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
     result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
     
     Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
@@ -225,7 +298,7 @@ function L_diag_update!(L, XGgrp, ygrp, Zgrp, β, σ², s, var_int = (0, 1e6), t
     
     function profile(x)
         Lcopy[s] = x 
-        negloglike(inv.(var_y(Lcopy, Zgrp, σ²)), ygrp, XGgrp, β) 
+        get_negll(inv.(var_y(Lcopy, Zgrp, σ²)), ygrp, XGgrp, β) 
     end
     result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
 
@@ -255,7 +328,7 @@ function L_sym_update!(L, XGgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int,
     int = coords[1]==cords[2] ? var_int : cov_int #Are we minimizing a covariance parameter or a variance parameters
     function profile(x)
         Lcopy[coords[1], coords[2]] = x 
-        negloglike(inv.(var_y(Lcopy, Zgrp, σ²)), ygrp, XGgrp, β) 
+        get_negll(inv.(var_y(Lcopy, Zgrp, σ²)), ygrp, XGgrp, β) 
     end
 
     result = optimize(profile, int[1], int[2]) #Will need to fix
@@ -278,7 +351,7 @@ Update of σ²
 """
 function σ²update(XGgrp, ygrp, Zgrp, β, L, var_int)
     
-    profile(σ²) = negloglike(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
+    profile(σ²) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
     result = optimize(profile, var_int[1]^2, var_int[2]^2) #Will need to fix
     
     Optim.converged(result) || error("Minimization with respect to σ² failed to converge")
