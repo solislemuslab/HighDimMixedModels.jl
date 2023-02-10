@@ -71,14 +71,14 @@ ArmijoRuleSCAD <- function(xGroup,yGroup,LGroup,b,j,cut,HkOldJ,HkJ,JinNonpen,lam
     {   ##depends on penalty
       ck<- (bJ*HkJ)-grad
       lambdaw<-lambda/weights[j]
-      if (ck<=lambdaw*(Hkj+1))
+      if (ck<=lambdaw*(HkJ+1))
         dk<- (-lambdaw-grad)/HkJ
       else if (ck>lambdaw*SCADa*HkJ)
         dk<- -grad/HkJ
       else
-        dk <- (-grad*(SCADa-1)-(SCADa*lambdaw - bJ))/(Hkj*(SCADa-1)-1)
+        dk <- (-grad*(SCADa-1)-(SCADa*lambdaw - bJ))/(HkJ*(SCADa-1)-1)
       }
-  
+
   if (dk!=0)
   { 
     # calculate delta_k

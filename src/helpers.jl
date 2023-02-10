@@ -88,7 +88,7 @@ function get_cost(negll, βpen, penalty, λ, scada=3.7)
     cost = negll
     
     if penalty == "lasso"
-        cost += λ.*abs.(βpen)
+        cost += sum(λ.*abs.(βpen))
     elseif penalty == "scad"
         cost += get_scad(βpen, λ, scada)
     end
