@@ -33,7 +33,7 @@ Algorithm Hyper-parameters
     max_iter::Int = 1000
     max_armijo::Int = 20
     act_number::Int = 5
-    a₀::Float64 = 1.0
+    ainit::Float64 = 1.0
     δ::Float64 = 0.1
     ρ::Float64 = 0.001
     γ::Float64 = 0.0
@@ -60,7 +60,7 @@ Keyword:
 - penalty :: One of "scad" (default) or "lasso"
 - λ :: Positive regularizing penalty (default is 10.0)
 - scada :: Extra tuning parameter for the SCAD penalty (default is 3.7, ignored if penalty is "lasso"
-- weights :: Vector of length number of penalized coefficients. Strength of penalty on covariate j is λ/wⱼ (Default is vector of 1's)
+- wts :: Vector of length number of penalized coefficients. Strength of penalty on covariate j is λ/wⱼ (Default is vector of 1's)
 - init_coef :: Tuple of form (β, L, σ²) giving initial values for parameters. If unspecified, then inital values for parameters are 
 calculated as follows: first, cross-validated LASSO that ignores grouping structure is performed to obtain initial estimates of the 
 fixed effect parameters. Then, the random effect parameters are initialized as MLEs assuming the LASSO estimates are true fixed effect parameters.
@@ -71,7 +71,7 @@ OUTPUT
 - Fitted model
 """
 function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector{String}, Z=X::Matrix{Real}; 
-    penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, weights::Vector{Real}=fill(1, size(G, 2)), 
+    penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, wts::Vector{Real}=fill(1, size(G, 2)), 
     init_coef::Union{Vector, Nothing}=nothing, Ψstr::String="diag", control=Control()) 
 
     # --- Introductory checks --- 
@@ -93,8 +93,8 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     
     @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
     @assert λ > 0 "λ is regularization parameter, must be positive"
-    @assert weights .> 0 "Weights must be positive"
-    λ = λ ./ weigths
+    @assert wts .> 0 "Weights must be positive"
+    λ = λ ./ wts
     @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
     control::HighDimMixedModels.Control 
     @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
@@ -155,7 +155,7 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
     conv_cov = norm(Liter)^2 +  σ²iter
     conv_fct = fct_iter
 
-    converged = false
+    converged = 0
     counter_in = 0
     counter = 0
 
@@ -167,8 +167,8 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         #Variables that are being updated
         βold = copy(βiter)
         Lold = copy(Liter)
-        σ²old = copy(σ²iter) 
-        fct_old = copy(fct_iter)
+        σ²old = σ²iter
+        fct_old = fct_iter
 
 
         #---Optimization with respect to fixed effect parameters ----------------------------
@@ -192,29 +192,21 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
 
         #Update fixed effect parameters that are in active_set
         for j in active_set 
-            λj = λ/weights[j]
             cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:p
                     βiter[j] = cut/hess_diag[j]
                 elseif penalty == "lasso" 
-                    βiter[j] = soft_thresh(cut, λj)/hess[j]
+                    βiter[j] = soft_thresh(cut, λ[j])/hess[j]
                 else #Scad penalty
-                    βiter[j] = scad_solution(cut, hess[j], λj, scada)
+                    βiter[j] = scad_solution(cut, hess[j], λ[j], scada)
                 end 
             else #Must actually perform Armijo line search 
-                arm = armijo(Xgrp, ygrp, Vgrp, fpars, j, cut, hess_untrunc[j], hess[j], cost, p, converged)
-                fpars = arm.fpars
-                cost = arm.cost
-                converged = arm.converged
-            end
-            control.trace > 3 && println(cost) 
+                fct_iter, converged = armijo!(XGgrp, ygrp, invVgrp, βiter, j, p, cut, hess_untrunc[j],
+                hess[j], penalty, λ, a, fct_iter, converged, control)
+            end 
         end
-        β = fpars[(p+2):end] #Pull out new penalized coefficients
-
-        control.trace > 3 && println("------------------------")
-
 
         #---Optimization with respect to covariance parameters ----------------------------
         #------------------------------------------------------------------------------------
@@ -245,7 +237,7 @@ function lmmlasso(X::Matrix{Real}, G::Matrix{Real}, y::Vector{Real}, grp::Vector
         Vgrp = Vgrp(L, Zgrp, σ²)
         invVgrp = [inv(V) for V in Vgrp]
         neglike = get_negll(invVgrp, ygrp, XaugGgrp, fpars)
-        #cost = neglike + λ*norm(β, 1)
+        #cost = neglike + λ.*abs.(β)
 
         #Compare to previous cost function...
 

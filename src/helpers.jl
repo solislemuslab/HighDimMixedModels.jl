@@ -61,16 +61,18 @@ end
 """
 Calculates the SCAD penalty
 """
-function get_scad(βpen, λ, a) 
+function get_scad(βpen, λ, a=3.7) 
+    
+    isa(βpen, Number) && (βpen = [βpen])
     scad = copy(βpen)
 
     for (j, β) in enumerate(βpen)
         if abs(β) ≤ λ[j]
-            scad[j] = λ[j]*β
-        else if abs(β) ≤ a*λ[j]
+            scad[j] = λ[j]*abs(β)
+        elseif abs(β) ≤ a*λ[j]
             scad[j] = (2*a*λ[j]*abs(β) - β^2 - λ[j]^2)/(2*(a-1))
         else 
-            scad[j] = (λ^2)*(a+1)/2
+            scad[j] = (λ[j]^2)*(a+1)/2
         end
         
     end
@@ -86,9 +88,10 @@ function get_cost(negll, βpen, penalty, λ, scada=3.7)
     cost = negll
     
     if penalty == "lasso"
-        cost += λ.*norm(βpen, 1)
-    else if penalty == "scad"
+        cost += λ.*abs.(βpen)
+    elseif penalty == "scad"
         cost += get_scad(βpen, λ, scada)
+    end
     return cost
 
 end 
@@ -190,22 +193,24 @@ function scad_solution(cut, hess, λ, a)
     
     if abs(cut) > a*λ
         β = cut/hess
-    else if abs(cut) ≤ 2λ
+    elseif abs(cut) ≤ 2λ
         β = soft_thresh(cut, λ)/hess
     else 
         β = ((a-1)*cut - sign(cut)*a*λ)/(hess*(a-2))
+    end
 
 end
 
 """
+Calculates descent direction with SCAD penalty
 """
-function scad_dir(βj::Real, hessj::Real, grad, λj, a)
+function scad_dir(βj::Real, hessj::Real, grad::Real, λj::Real, a::Real)
 
     c = βj*hessj-grad
 
-    if c ≤ λj(hessj + 1)
-        d = -(λ + grad)/hessj
-    else if c > λ*a*hessj
+    if c ≤ λj*(hessj + 1)
+        d = -(λj + grad)/hessj
+    elseif c > λj*a*hessj
         d = -grad/hessj
     else
         d = (-grad*(a-1)-(a*λ - βj))/(hessj*(a-1)-1)
@@ -215,13 +220,12 @@ function scad_dir(βj::Real, hessj::Real, grad, λj, a)
 end
 
 
-
-
 """
 Armijo Rule
 """
-function armijo(XGgrp, ygrp, invVgrp, β::Vector{Real}, cut, 
-    hessj_untrunc::Real, hessj::Real, λj::Real, a, cost, p, converged, penalty)
+function armijo!(XGgrp, ygrp, invVgrp, β, j, p, cut, 
+    hessj_untrunc::Real, hessj::Real, penalty, 
+    λ, a, fct_old, converged, control)
     
     βnew = copy(β)
    
@@ -230,37 +234,44 @@ function armijo(XGgrp, ygrp, invVgrp, β::Vector{Real}, cut,
     
     if j in 1:p
         dir = -grad/hessj
-    else if penalty == "lasso"
-        dir = median([(λj - grad)/hessj, -β[j], (-λj - grad)/hessj])
-    else ##penalty is "Scad"
-        dir = scad_dir(β[j], hessj, grad, λj, a)
+    elseif penalty == "lasso"
+        dir = median([(λ[j] - grad)/hessj, -β[j], (-λ[j] - grad)/hessj])
+    else ##penalty is SCAD
+        dir = scad_dir(β[j], hessj, grad, λ[j], a)
+    end
 
-    if dk!=0
+    if dir != 0
         #Calculate Δk
-        if j in 1:p+1
-            Δk = dk*grad + control.γ*dk^2*hnew
-        else
-            Δk = dk*grad + control.γ*dk^2*hnew + λ*(abs(fpars[j]+dk)-abs(fpars[j]))
+        if j in 1:p
+            Δk = dir*grad + control.γ*dir^2*hessj
+        elseif penalty == "lasso"
+            Δk = dir*grad + control.γ*dir^2*hessj + λ[j]*(abs(β[j]+dir)-abs(β[j]))
+        else #penalty is SCAD
+            Δk = dir*grad + control.γ*dir^2*hessj + get_scad(β[j] + dir, λ[j], a) - get_scad(β[j], λ[j], a)
         end
-        
+
+        fct = fct_old
         #Armijo line search
         for l in 0:control.max_armijo
-            fparsnew[j] = fpars[j] + control.a_init*control.Δ^l*dk
-            costnew = get_negll(Vgrp, ygrp, XGgrp, fparnew) + λ*norm(fparsnew[p+2:end], 1)
-            addΔ = control.a_init*control.Δ^l*control.ρ*Δk
-            if costnew <= cost + addΔ
-                fpars[j] = fparsnew[j]
-                cost = costnew
-                break 
+
+            βnew[j] = β[j] + control.ainit*control.δ^l*dir
+            negllnew = get_negll(invVgrp, ygrp, XGgrp, βnew)
+            fct_new = get_cost(negllnew, βnew[(p+1):end], penalty, λ, a)
+            addΔ = control.ainit*control.δ^l*control.ρ*Δk
+
+            if fct_new <= fct + addΔ
+                β[j] = βnew[j]
+                fct = fct_new
+                return (fct = fct, converged = converged)
             end
-            if l == control.max_armjio
-                trace > 2 && println("Armijo for coordinate $(j) of fixed parameters not successful") 
+            if l == control.max_armijo
+                control.trace > 1 && println("Armijo for coordinate $(j) of β not successful") 
                 converged = converged+2 
+                return (fct = fct, converged = converged)
             end
         end
     end
-    
-    return (fpars = fpars , cost = cost, converged = converged)
+
 end
 
 """ 
