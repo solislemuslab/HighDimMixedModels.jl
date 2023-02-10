@@ -227,18 +227,30 @@ end
 ll_old = hdmm.get_negll(invVgrp, ygrp, XGgrp, βiter)
 fct_old = hdmm.get_cost(ll_old, βiter[(p+1):end], "scad", λwtd)
 
+R"cut = rep(0, p+q)"
+println(βiter)
+println("Function value is $(fct_old)")
+for j in active_set
+    cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
+    R"cut[$j] = $cut"
+    arm = hdmm.armijo!(XGgrp, ygrp, invVgrp, βiter, 
+    j, p, cut, hess_untrunc[j], hess[j], 
+    "scad", λwtd, a, fct_old, 0, control)
+    println("The new value of β is $(βiter) with function value $(arm.fct)")
+    fct_old = arm.fct    
+end
 
-j = 1
-R"j = $j"
-cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
-R"cut = $cut"
+R" 
+for (j in active_set) {
+    JinNonpen = j %in% c(1,2)
+    arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter, j=j, cut[j], hess_untruncR[j], hess_R[j], 
+    JinNonpen = JinNonpen, λ, a, weights = rep(1,7), 
+    nonpen = c(1,2) , ll1, ll2, converged = 0, 
+    control=list(max.armijo=maxArmijo,a_init=a_init,delta=delta,rho=rho,gamma=gamma))
+    print(arm)
+    βiter = arm$b
+}
+"
 
-βiter
-arm = hdmm.armijo!(XGgrp, ygrp, invVgrp, βiter, 1, p, cut, hess_untrunc[j], hess[j], "scad", λwtd, a, fct_old, 0, control)
-print(βiter)
 
-
-R"arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter, j=1, cut, hess_untruncR[j], 
-hess_R[j], JinNonpen = TRUE, λ, a, weights = rep(1,7), nonpen = c(1,2) , ll1, ll2, converged = 0, 
-control=list(max.armijo=maxArmijo,a_init=a_init,delta=delta,rho=rho,gamma=gamma))"
 
