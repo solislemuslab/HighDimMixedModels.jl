@@ -15,8 +15,8 @@ using MLBase
 include("../src/simulations.jl")
 import Main.simulations as sim
 ##Include lmmSCAD code
-R"source(\"../R/lmmSCAD/helpers.R\")"
-R"source(\"../R/lmmSCAD/lmmSCAD.R\")"
+R"source(\"R/lmmSCAD/helpers.R\")"
+R"source(\"R/lmmSCAD/lmmSCAD.R\")"
 R"library(splmm)"
 R"library(emulator)"
 R"library(glmnet)"
@@ -31,14 +31,16 @@ R"tol=10^(-2); trace=1; maxIter=1000; maxArmijo=20; number=5; a_init=1; delta=0.
 R"control = splmmControl()"
 
 # Simulate a dataset 
-p = 2
+m = 3
+p = 3
 q = 5
-X, G, Z, grp = sim.simulate_design()
+X, G, Z, grp = sim.simulate_design(p=p, q=q, m=m)
 g = length(unique(grp))
 N = length(grp)
 
 XG = [X G]
 
+R"m = $m"
 R"p = $p"
 R"q = $q"
 R"g = $g"
@@ -51,10 +53,10 @@ R"XG = cbind(X,G)"
 R"ll1 <- 1/2*N*log(2*pi)"
 
 # True parameters 
-βun = [1,2]
+βun = [1, 2, -3]
 βpen = [4,3,0,0,0]
 β = [βun; βpen]
-L = LowerTriangular([20 0; 0 20])
+L = LowerTriangular([1 0 0; 1 1 0; -3 3 1])
 σ² = 100
 R"beta = $β"
 R"L = $L"
@@ -70,13 +72,11 @@ R"y = $y"
 λ = 10
 a = 3.7
 wts = fill(1, q)
-λwtd = λ./wts
+λwtd =[zeros(p); λ./wts]
 R"λ = $λ"
 R"λwtd = $λwtd"
 R"a = $a"
 R"wts = $wts"
-
-
 
 
 # Estimate fixed effect parameters with LASSO that doesn't take into account random effect structure (with several different settings)
@@ -127,11 +127,11 @@ R"invVgrp = $invVgrp"
     lassomod_yfixed_nopen_ll = hdmm.get_negll(invVgrp, ygrp, XGgrp, lassomod_yfixed_nopen)
     my_log_likes = [true_ll, lassomod_ll, lassomod_nopen_ll, lassomod_yfixed_ll, lassomod_yfixed_nopen_ll]
 
-    R"true_ll = -MLloglik(XGgrp, ygrp, invVgrp, beta, N, g, 0)"
-    R"lassomod_ll = -MLloglik(XGgrp, ygrp, invVgrp, lassomod, N, g, 0)"
-    R"lassomod_nopen_ll = -MLloglik(XGgrp, ygrp, invVgrp, lassomod_nopen, N, g, 0)"
-    R"lassomod_yfixed_ll = -MLloglik(XGgrp, ygrp, invVgrp, lassomod_yfixed, N, g, 0)"
-    R"lassomod_yfixed_nopen_ll = -MLloglik(XGgrp, ygrp, invVgrp, lassomod_yfixed_nopen, N, g, 0)"
+    R"true_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, beta, N, g, 0)"
+    R"lassomod_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod, N, g, 0)"
+    R"lassomod_nopen_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod_nopen, N, g, 0)"
+    R"lassomod_yfixed_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod_yfixed, N, g, 0)"
+    R"lassomod_yfixed_nopen_ll = -splmm:::MLloglik(XGgrp, ygrp, invVgrp, lassomod_yfixed_nopen, N, g, 0)"
     R"splmm_loglikes = c(true_ll, lassomod_ll, lassomod_nopen_ll, lassomod_yfixed_ll, lassomod_yfixed_nopen_ll)"
     @rget splmm_loglikes
     
@@ -163,11 +163,11 @@ end
     my_pars = [collect(start1), collect(start2), collect(start3), collect(start4), collect(start5)]
 
     R"IdGroup = lapply(Zgrp, function(z) diag(dim(z)[[1]]))"
-    R"start1 = covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, beta, N, g)"
-    R"start2 = covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod, N, g)"
-    R"start3 = covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_nopen, N, g)"
-    R"start4 = covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_yfixed, N, g)"
-    R"start5 = covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_yfixed_nopen, N, g)"
+    R"start1 = splmm:::covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, beta, N, g)"
+    R"start2 = splmm:::covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod, N, g)"
+    R"start3 = splmm:::covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_nopen, N, g)"
+    R"start4 = splmm:::covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_yfixed, N, g)"
+    R"start5 = splmm:::covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_yfixed_nopen, N, g)"
     R"splmm_pars = lapply(list(start1, start2, start3, start4, start5), function(start) c(start$tau, start$sigma^2))"
     @rget splmm_pars
 
@@ -175,16 +175,19 @@ end
 
 end
 
+
+### Test fixed effect parameter update functions
+
 #Choose one of the initialized parameters for further testing
-βiter = lassomod
+βiter = copy(lassomod)
 cov_iter = hdmm.cov_start(XGgrp, ygrp, Zgrp, βiter)
-Liter = cov_iter[1]
+Liter = cov_iter[1] #Assume identity structure for now
 σ²iter = cov_iter[2]
 Vgrp = hdmm.var_y(Liter, Zgrp, σ²iter)
 invVgrp = [inv(V) for V in Vgrp]
-R"βiter = $βiter"
-R"Liter = $Liter"
-R"σ2iter = $σ²iter"
+R"βiter_R = $βiter"
+R"Liter_R = $Liter"
+R"σ2iter_R = $σ²iter"
 R"invVgrp = $invVgrp"
 R"ll2 <- sum(mapply(nlogdetfun,invVgrp))"
 
@@ -216,20 +219,20 @@ R"LxGrp = splmm:::as1(XGgrp, invVgrp, active_set, g)"
     for j in active_set
         cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
         R"j = $j"
-        R"cutR = splmm:::as2(XG, y, βiter, j, active_set, grp, LxGrp)"
+        R"cutR = splmm:::as2(XG, y, βiter_R, j, active_set, grp, LxGrp)"
         @rget cutR
-        @test isapprox(cut, cutR)
+        @test isapprox(cut, cutR, atol = 1e-6)
     end
 
 end
 
 
 ll_old = hdmm.get_negll(invVgrp, ygrp, XGgrp, βiter)
-fct_old = hdmm.get_cost(ll_old, βiter[(p+1):end], "scad", λwtd)
+fct_old = hdmm.get_cost(ll_old, βiter[(p+1):end], "scad", λwtd[(p+1):end])
 
 R"cut = rep(0, p+q)"
-println(βiter)
-println("Function value is $(fct_old)")
+println("Current value of  βiter is $(βiter)")
+println("Current function value is $(fct_old)")
 for j in active_set
     cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
     R"cut[$j] = $cut"
@@ -237,20 +240,112 @@ for j in active_set
     j, p, cut, hess_untrunc[j], hess[j], 
     "scad", λwtd, a, fct_old, 0, control)
     println("The new value of β is $(βiter) with function value $(arm.fct)")
-    fct_old = arm.fct    
+    global fct_old = arm.fct    
 end
 
+R"cat(\"Current value of βiter is \", βiter_R, \"\n\")"
 R" 
 for (j in active_set) {
-    JinNonpen = j %in% c(1,2)
-    arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter, j=j, cut[j], hess_untruncR[j], hess_R[j], 
-    JinNonpen = JinNonpen, λ, a, weights = rep(1,7), 
-    nonpen = c(1,2) , ll1, ll2, converged = 0, 
+    JinNonpen = j %in% 1:p
+    arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter_R, j=j, cut[j], hess_untruncR[j], hess_R[j], 
+    JinNonpen = JinNonpen, λ, a, weights = rep(1,p+q), 
+    nonpen = 1:p , ll1, ll2, converged = 0, 
     control=list(max.armijo=maxArmijo,a_init=a_init,delta=delta,rho=rho,gamma=gamma))
     print(arm)
-    βiter = arm$b
+    βiter_R = arm$b
 }
 "
+
+@testset "Fixed effect updates" begin
+    
+    @rget βiter_R
+    @test isapprox(βiter_R, βiter, atol = 1e-5)
+
+
+end
+
+R"βiter = βiter_R"
+
+#How to test Lasso?
+
+
+### Test covariance parameter update functions
+
+#Start with testing for identity structure
+Lnew = hdmm.L_ident_update(XGgrp, ygrp, Zgrp, βiter, σ²iter, control.var_int, control.thres)
+
+
+R"activeset <- which(βiter!=0)"
+R"rIter <- y-XG[,activeset,drop=FALSE]%*%βiter[activeset,drop=FALSE]"
+R"resGrp <- split(rIter,grp)"
+
+R"optRes <- nlminb(Liter_R,MLpdIdentFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),LPsi=diag(p),lower = 10^(-6), upper = 100)"
+
+
+@testset "L identity structure update function" begin
+
+    @rget optRes 
+    @test isapprox(optRes[:par], Lnew, atol = 1e-5)
+
+end
+
+##Now test diagonal structure
+Ldiag = fill(Liter, m)
+R"LdiagR = rep(Liter_R, m)"
+#First component
+s = 1
+hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+Ldiag
+R"s = $s"
+R"optRes <- nlminb(LdiagR[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+                         a=s,b=s,LPsi=diag(LdiagR, nrow=length(LdiagR)),lower = 10^(-6), upper = 100)"
+R"LdiagR[s] = optRes$par"
+#Second component
+s = 2
+hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+Ldiag
+R"s = $s"
+R"optRes <- nlminb(LdiagR[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+                         a=s,b=s,LPsi=diag(LdiagR, nrow=length(LdiagR)),lower = 10^(-6), upper = 100)"
+R"LdiagR[s] = optRes$par"
+
+s = 3
+hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+Ldiag
+R"s = $s"
+R"optRes <- nlminb(LdiagR[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+                         a=s,b=s,LPsi=diag(LdiagR, nrow=length(LdiagR)),lower = 10^(-6), upper = 100)"
+R"LdiagR[s] = optRes$par"
+
+
+@testset "L diagonal structure update function" begin
+
+    @rget LdiagR 
+    @test isapprox(Ldiag, LdiagR, atol = 1e-4)
+
+end
+
+
+##Now test general symmetric structure
+
+#Create general lower traingular L (assuming diagoanl entries have already been updated)
+Lsym = LowerTriangular(diagm(Ldiag)) 
+
+#Update off diagonal entries 
+for i in 1:m
+    for j in 1:(i-1)
+        hdmm.L_sym_update!(Lsym, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), control.var_int, control.cov_int, control.thres)
+    end
+end
+
+
+
+
+
+
+
+
+
 
 
 

@@ -22,7 +22,7 @@ OUTPUT:
 - Z :: Matrix of dimension Ntot by m
 - grp :: grouping variable, vector of length Ntot with N distinct string values
 """
-function simulate_design(n=fill(6, 20), p=2, q=5, m=p, rho=0.2; seed=54)
+function simulate_design(;n=fill(6, 20), p=2, q=5, m=p, rho=0.2, seed=54)
    
     Random.seed!(seed)
     N = sum(n) # Total number of observations

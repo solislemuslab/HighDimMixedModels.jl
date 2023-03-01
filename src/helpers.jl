@@ -83,14 +83,14 @@ end
 """
 Calculates the objective function
 """
-function get_cost(negll, βpen, penalty, λ, scada=3.7)
+function get_cost(negll, βpen, penalty, λpen, scada=3.7)
     
     cost = negll
     
     if penalty == "lasso"
-        cost += sum(λ.*abs.(βpen))
+        cost += sum(λpen.*abs.(βpen))
     elseif penalty == "scad"
-        cost += get_scad(βpen, λ, scada)
+        cost += get_scad(βpen, λpen, scada)
     end
     return cost
 
@@ -133,7 +133,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
         get_negll(invVgrp, ygrp, XGgrp, β) 
     end
 
-    result = optimize(profile, 0.0001, 1.0e4) #will need to fix
+    result = optimize(profile, 1.0e-6, 1.0e6) #will need to fix
     
     if Optim.converged(result)
         η = Optim.minimizer(result)
@@ -256,7 +256,7 @@ function armijo!(XGgrp, ygrp, invVgrp, β, j, p, cut,
 
             βnew[j] = β[j] + control.ainit*control.δ^l*dir
             negllnew = get_negll(invVgrp, ygrp, XGgrp, βnew)
-            fct_new = get_cost(negllnew, βnew[(p+1):end], penalty, λ, a)
+            fct_new = get_cost(negllnew, βnew[(p+1):end], penalty, λ[(p+1):end], a)
             addΔ = control.ainit*control.δ^l*control.ρ*Δk
 
             if fct_new <= fct + addΔ
@@ -279,10 +279,12 @@ Update of L for identity covariance structure
 """ 
 function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
 
+    L_lb, L_ub = var_int
+
     profile(L) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
-    result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
+    result = optimize(profile, L_lb, L_ub) 
     
-    Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
+    Optim.converged(result) || error("Minimization with respect to L failed to converge")
     min = Optim.minimizer(result)
 
     if min < thres
@@ -291,8 +293,8 @@ function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
     else
         L = min
     end
-
     return L
+
 end
 
 
@@ -303,15 +305,16 @@ ARGUMENTS
 - L :: A vector of parameters which will be updated by the function
 - s :: The coordinate of L that is being updated (number between 1 and length(L))
 """
-function L_diag_update!(L, XGgrp, ygrp, Zgrp, β, σ², s, var_int = (0, 1e6), thres=1e-4)
+function L_diag_update!(L, XGgrp, ygrp, Zgrp, β, σ², s, var_int, thres)
     
-    Lcopy = copy(L)
-    
+    #Function to optimize
     function profile(x)
-        Lcopy[s] = x 
-        get_negll(inv.(var_y(Lcopy, Zgrp, σ²)), ygrp, XGgrp, β) 
+        L[s] = x 
+        get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β) 
     end
-    result = optimize(profile, var_int[1], var_int[2]) #Will need to fix
+
+    x_lb, x_ub = var_int
+    result = optimize(profile, x_lb, x_ub) 
 
     Optim.converged(result) || error("Minimization with respect to $(s)th coordinate of L failed to converge")
     min = Optim.minimizer(result)
@@ -335,14 +338,17 @@ ARGUMENTS
 """
 function L_sym_update!(L, XGgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int, thres)
     
-    Lcopy = copy(L)
-    int = coords[1]==cords[2] ? var_int : cov_int #Are we minimizing a covariance parameter or a variance parameters
+    #Are we minimizing a covariance parameter or a variance parameters
+    int = coords[1]==coords[2] ? var_int : cov_int 
+    
+    #Function to optimize
     function profile(x)
-        Lcopy[coords[1], coords[2]] = x 
-        get_negll(inv.(var_y(Lcopy, Zgrp, σ²)), ygrp, XGgrp, β) 
+        L[coords[1], coords[2]] = x 
+        get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β) 
     end
 
-    result = optimize(profile, int[1], int[2]) #Will need to fix
+    x_lb, x_ub = int
+    result = optimize(profile, x_lb, x_ub)
 
     Optim.converged(result) || error("Minimization with respect to $(coords) entry of L failed to converge")
     min = Optim.minimizer(result)

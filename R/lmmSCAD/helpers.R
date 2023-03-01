@@ -1,5 +1,5 @@
 
-##################### -- generate an Identity matrix of order as nrow(z)
+##################### -- generate an identity matrix of dimension nrow(z)
 
 ZIdentity <- function(Z)
 {
