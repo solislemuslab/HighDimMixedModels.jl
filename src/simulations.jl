@@ -1,4 +1,8 @@
 module simulations
+
+export simulate_design
+export simulate_y
+
 using StatsBase
 using Random
 using Distributions
@@ -14,7 +18,6 @@ ARGUMENTS
 - q :: Number of penalized fixed effect parameters
 - m :: Of the unpenalized predictors, number which have associated random effects
 - rho :: Correlation between fixed effect predictors 
-- seed :: Random seed
 
 OUTPUT:
 - X :: Matrix of dimension Ntot by p
@@ -22,9 +25,8 @@ OUTPUT:
 - Z :: Matrix of dimension Ntot by m
 - grp :: grouping variable, vector of length Ntot with N distinct string values
 """
-function simulate_design(;n=fill(6, 20), p=2, q=5, m=p, rho=0.2, seed=54)
+function simulate_design(;n=fill(6, 20), p=2, q=5, m=p, rho=0.2)
    
-    Random.seed!(seed)
     N = sum(n) # Total number of observations
     n_pred = q + p - 1 # Total number of predictors (doesn't include intercept)
 
@@ -59,26 +61,26 @@ ARGUMENTS
 - Z :: Random effect design matrix with column for intercept
 - grp :: Vector of strings of same length as number of rows of X, assigning each observation to a particular group 
 - βun :: Vector of length p+1 with unpenalized fixed effect parameters
-- βun :: Vector of length q with penalized fixed effect parameters
+- βpen :: Vector of length q with penalized fixed effect parameters
 - L :: Scalar, Vector, or Lower Triangular matrix depending on how random effect covariance structure is parameterized
 - σ² :: Error variance
 
 OUTPUT
 - y :: Vector of responses
 """
-function simulate_y(X, G, Z, grp, βun, βpen, L, σ²; seed=54)
+function simulate_y(X, G, Z, grp, βun, βpen, L, σ²)
     
-    Random.seed!(seed)
+    
     #Fixed component of response
     y = X*βun + G*βpen
 
     groups = unique(grp) 
     g = length(groups) # Total number of groups
-    m = size(Z)[2] - 1 # Number of predictors with associated random effects
+    m = size(Z)[2] # Number of predictors with associated random effects
     ndims(L) < 2 || (L = Matrix(L)*Matrix(L')) # If L is a matrix, it will be Cholesky factor of random effect covariance matrix
-    dist_b = MvNormal(zeros(m+1), L) 
+    dist_b = MvNormal(zeros(m), L) 
     b = rand(dist_b, g) # Matrix of dimensions m by N, each of whose columns is draw from dist_b
-
+    println(b[:,1:3])
     #Add random component of response
     for (i, group) in enumerate(groups)
         group_ind = (grp .== group)

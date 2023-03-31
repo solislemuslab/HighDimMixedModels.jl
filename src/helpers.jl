@@ -17,11 +17,12 @@ OUTPUT
 - Vgrp :: List of length the number of groups, each of whose elements is the covariance matrix of the responses within a group
 """
 function var_y(L, Zgrp, σ²)
+    
     q = size(Zgrp[1])[2]
-
-    if length(L) == 1
+    
+    if isa(L, Number)
         Ψ = (L^2)I(q)
-    elseif isa(L, Vector) && length(L) == q 
+    elseif isa(L, Vector)
         Ψ = Diagonal(L.^2)
     else
         Ψ = L*L' 
@@ -30,7 +31,7 @@ function var_y(L, Zgrp, σ²)
     Vgrp = Matrix[]
     for Zᵢ in Zgrp
         nᵢ = size(Zᵢ)[1]
-        push!(Vgrp, Symmetric(Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ))) #Symmetric used to adjust for floating point error 
+        push!(Vgrp, Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ))  
     end
     return Vgrp 
 end
@@ -213,7 +214,7 @@ function scad_dir(βj::Real, hessj::Real, grad::Real, λj::Real, a::Real)
     elseif c > λj*a*hessj
         d = -grad/hessj
     else
-        d = (-grad*(a-1)-(a*λ - βj))/(hessj*(a-1)-1)
+        d = (-grad*(a-1)-(a*λj - βj))/(hessj*(a-1)-1)
     end
     
     return d
@@ -280,9 +281,9 @@ Update of L for identity covariance structure
 function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
 
     L_lb, L_ub = var_int
-
+    
     profile(L) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
-    result = optimize(profile, L_lb, L_ub) 
+    result = optimize(profile, L_lb, L_ub, show_trace = false) 
     
     Optim.converged(result) || error("Minimization with respect to L failed to converge")
     min = Optim.minimizer(result)
@@ -353,7 +354,7 @@ function L_sym_update!(L, XGgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int,
     Optim.converged(result) || error("Minimization with respect to $(coords) entry of L failed to converge")
     min = Optim.minimizer(result)
     
-    if min < thres
+    if coords[1]==coords[2] && min < thres 
         L[coords[1], coords[2]] = 0
         println("$(coords) entry of L was set to 0")
     else
@@ -367,9 +368,12 @@ end
 Update of σ²
 """
 function σ²update(XGgrp, ygrp, Zgrp, β, L, var_int)
-    
+   
+    #Decision variable will be σ² rather than σ
     profile(σ²) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
-    result = optimize(profile, var_int[1]^2, var_int[2]^2) #Will need to fix
+    
+    x_lb, x_ub = var_int
+    result = optimize(profile, x_lb^2, x_ub^2) #Square bounds because decision variable is σ²
     
     Optim.converged(result) || error("Minimization with respect to σ² failed to converge")
 
