@@ -15,15 +15,15 @@ using MLBase
 include("../src/simulations.jl")
 import Main.simulations as sim
 ##Include lmmSCAD code
-R"source(\"R/lmmSCAD/helpers.R\")"
-R"source(\"R/lmmSCAD/lmmSCAD.R\")"
+R"source(\"../R/lmmSCAD/helpers.R\")"
+R"source(\"../R/lmmSCAD/lmmSCAD.R\")"
 R"library(splmm)"
 R"library(emulator)"
 R"library(glmnet)"
 
 #Create control struct containing hyper-parameters for algorithm
 #For Julia
-control = hdmm.Control()#Create algorithm hyperparameters for lmmSCAD
+control = hdmm.Control() 
 #For lmmSCAD
 R"tol=10^(-2); trace=1; maxIter=1000; maxArmijo=20; number=5; a_init=1; delta=0.1; rho=0.001; gamma=0; 
   lower=10^(-6); upper=10^8;"
@@ -53,10 +53,10 @@ R"XG = cbind(X,G)"
 R"ll1 <- 1/2*N*log(2*pi)"
 
 # True parameters 
-βun = [1, 2, -3]
+βun = [20, 2, -3]
 βpen = [4,3,0,0,0]
 β = [βun; βpen]
-L = LowerTriangular([1 0 0; 1 1 0; -3 3 1])
+L = LowerTriangular([15 0 0; 0 10 0; 0 0 5])
 σ² = 100
 R"beta = $β"
 R"L = $L"
@@ -206,7 +206,7 @@ hess_untrunc = copy(hess)
 hess[active_set] = min.(max.(hess[active_set], control.lower), control.upper)
 
 R"hess_R = splmm:::HessianMatrix(XGgrp,invVgrp,active_set,g,hess,mat[,active_set])"
-R"hess_untruncR = hess_R"
+R"hess_untrunc_R = hess_R"
 R"hess_R[active_set] = pmin(pmax(hess_R[active_set],control$lower),control$upper)"
 
 
@@ -214,14 +214,14 @@ R"LxGrp = splmm:::as1(XGgrp, invVgrp, active_set, g)"
 
 @testset "hessian and cut calculation" begin
     
-    @rget hess_untruncR
-    @test isapprox(hess_untruncR, hess_untrunc)
+    @rget hess_untrunc_R
+    @test isapprox(hess_untrunc_R, hess_untrunc)
     for j in active_set
         cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
         R"j = $j"
-        R"cutR = splmm:::as2(XG, y, βiter_R, j, active_set, grp, LxGrp)"
-        @rget cutR
-        @test isapprox(cut, cutR, atol = 1e-6)
+        R"cut_R = splmm:::as2(XG, y, βiter_R, j, active_set, grp, LxGrp)"
+        @rget cut_R
+        @test isapprox(cut, cut_R, atol = 1e-6)
     end
 
 end
@@ -247,7 +247,7 @@ R"cat(\"Current value of βiter is \", βiter_R, \"\n\")"
 R" 
 for (j in active_set) {
     JinNonpen = j %in% 1:p
-    arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter_R, j=j, cut[j], hess_untruncR[j], hess_R[j], 
+    arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter_R, j=j, cut[j], hess_untrunc_R[j], hess_R[j], 
     JinNonpen = JinNonpen, λ, a, weights = rep(1,p+q), 
     nonpen = 1:p , ll1, ll2, converged = 0, 
     control=list(max.armijo=maxArmijo,a_init=a_init,delta=delta,rho=rho,gamma=gamma))
@@ -279,7 +279,8 @@ R"activeset <- which(βiter!=0)"
 R"rIter <- y-XG[,activeset,drop=FALSE]%*%βiter[activeset,drop=FALSE]"
 R"resGrp <- split(rIter,grp)"
 
-R"optRes <- nlminb(Liter_R,MLpdIdentFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),LPsi=diag(p),lower = 10^(-6), upper = 100)"
+R"optRes <- nlminb(Liter_R,MLpdIdentFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+LPsi=diag(p),lower = 10^(-6), upper = 100)"
 
 
 @testset "L identity structure update function" begin
@@ -291,37 +292,37 @@ end
 
 ##Now test diagonal structure
 Ldiag = fill(Liter, m)
-R"LdiagR = rep(Liter_R, m)"
+R"Ldiag_R = rep(Liter_R, m)"
 #First component
 s = 1
 hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
 Ldiag
 R"s = $s"
-R"optRes <- nlminb(LdiagR[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
-                         a=s,b=s,LPsi=diag(LdiagR, nrow=length(LdiagR)),lower = 10^(-6), upper = 100)"
-R"LdiagR[s] = optRes$par"
+R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+                         a=s,b=s,LPsi=diag(Ldiag_R, nrow=length(Ldiag_R)),lower = 10^(-6), upper = 100)"
+R"Ldiag_R[s] = optRes$par"
 #Second component
 s = 2
 hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
 Ldiag
 R"s = $s"
-R"optRes <- nlminb(LdiagR[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
-                         a=s,b=s,LPsi=diag(LdiagR, nrow=length(LdiagR)),lower = 10^(-6), upper = 100)"
-R"LdiagR[s] = optRes$par"
+R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+                         a=s,b=s,LPsi=diag(Ldiag_R, nrow=length(Ldiag_R)),lower = 0, upper = 100)"
+R"Ldiag_R[s] = optRes$par"
 
 s = 3
 hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
 Ldiag
 R"s = $s"
-R"optRes <- nlminb(LdiagR[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
-                         a=s,b=s,LPsi=diag(LdiagR, nrow=length(LdiagR)),lower = 10^(-6), upper = 100)"
-R"LdiagR[s] = optRes$par"
+R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
+                         a=s,b=s,LPsi=diag(Ldiag_R, nrow=length(Ldiag_R)),lower = 0, upper = 100)"
+R"Ldiag_R[s] = optRes$par"
 
 
 @testset "L diagonal structure update function" begin
 
-    @rget LdiagR 
-    @test isapprox(Ldiag, LdiagR, atol = 1e-4)
+    @rget Ldiag_R 
+    @test isapprox(Ldiag, Ldiag_R, atol = 1e-4)
 
 end
 
@@ -330,13 +331,61 @@ end
 
 #Create general lower traingular L (assuming diagoanl entries have already been updated)
 Lsym = LowerTriangular(diagm(Ldiag)) 
-
 #Update off diagonal entries 
-for i in 1:m
+for i in 2:m
     for j in 1:(i-1)
-        hdmm.L_sym_update!(Lsym, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), control.var_int, control.cov_int, control.thres)
+        hdmm.L_sym_update!(Lsym, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), 
+        control.var_int, control.cov_int, control.thres)
     end
 end
+
+R"Lsym_R = diag(Ldiag_R, nrow=length(Ldiag_R))" 
+R"for (i in 2:m) {
+    for (j in 1:(i-1)) {
+        optRes <- nlminb(0,MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R), 
+        a=i,b=j,LPsi=Lsym_R,lower = -500, upper = 500)
+        Lsym_R[i, j] = optRes$par
+    }
+}"
+
+
+@testset "L symmetric structure update function" begin
+
+    @rget Lsym_R 
+    #print(Lsym - Lsym_R)
+    @test isapprox(Lsym, Lsym_R, atol = 1e-4)
+
+end
+
+R"PsiIter <- Lsym_R %*% t(Lsym_R)" 
+
+## Finally, test sigma update
+σ²iter = hdmm.σ²update(XGgrp, ygrp, Zgrp, βiter, Lsym, control.var_int)
+R"optRes <- nlminb(sqrt(σ2iter_R),MLsigmaFct,zGroup=Zgrp,resGroup=resGrp,Psi=PsiIter,lower = 0, upper = 100)"
+R"σ2iter_R = optRes$par^2"
+
+@testset "error variance update" begin
+
+    @rget σ2iter_R 
+    #print(Lsym - Lsym_R)
+    @test isapprox(σ²iter, σ2iter_R , atol = 1e-3)
+
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

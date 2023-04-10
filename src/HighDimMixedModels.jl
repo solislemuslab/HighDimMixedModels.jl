@@ -73,16 +73,16 @@ fixed effect parameters. Then, the random effect parameters are initialized as M
 OUTPUT
 - Fitted model
 """
-function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, grp::Vector{String}, Z::Matrix{Float64}; 
+function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, grp::Vector{String}, Z::Matrix{Float64}=X; 
     standardize = false, penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, wts::Vector{Float64}=fill(1, size(G, 2)), 
     init_coef::Union{Vector, Nothing}=nothing, ψstr::String="diag", control=Control()) 
 
 
     ##Get dimensions
     N = length(y) # Total number of observations
-    q = size(G, 2) # Number of penalized covariates 
-    p = size(X, 2) # Number of unpenalized covariates 
-    m = size(Z, 2) # Number of covariates associated with random effects 
+    p = size(G, 2) # Number of penalized covariates 
+    q = size(X, 2) # Number of unpenalized covariates 
+    m = size(Z, 2) # Number of covariates associated with random effects (less than or equal to q) 
     groups = unique(grp)
     g = length(groups) #Number of groups
 
@@ -107,7 +107,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
     @assert λ > 0 "λ is regularization parameter, must be positive"
     @assert all(wts .> 0) "Weights must be positive"
-    λwtd = [zeros(p); λ./wts] 
+    λwtd = [zeros(q); λ./wts] 
     @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
     @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
     
@@ -172,7 +172,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     Vgrp = var_y(Lstart, Zgrp, σ²start)
     invVgrp = [inv(V) for V in Vgrp]
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
-    fct_start = get_cost(neglike_start, βstart[(p+1):end], penalty, λwtd[(p+1):end], scada)
+    fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
 
 
@@ -235,7 +235,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
             cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
-                if j in 1:p
+                if j in 1:q
                     βiter[j] = cut/hess[j]
                 elseif penalty == "lasso" 
                     βiter[j] = soft_thresh(cut, λwtd[j])/hess[j]
@@ -243,7 +243,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
                     βiter[j] = scad_solution(cut, hess[j], λwtd[j], scada)
                 end 
             else #Must actually perform Armijo line search 
-                fct_iter, converged = armijo!(XGgrp, ygrp, invVgrp, βiter, j, p, cut, hess_untrunc[j],
+                fct_iter, converged = armijo!(XGgrp, ygrp, invVgrp, βiter, j, q, cut, hess_untrunc[j],
                 hess[j], penalty, λwtd, scada, fct_iter, converged, control)
             end 
         end
@@ -280,7 +280,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
 
         #Calculate new objective function
         neglike = get_negll(invVgrp, ygrp, XGgrp, βiter)
-        fct_iter = get_cost(neglike, βiter[(p+1):end], penalty, λwtd[(p+1):end], scada)
+        fct_iter = get_cost(neglike, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
 
         #Check convergence
         convβ = norm(βiter-βold)/(1+norm(βiter))

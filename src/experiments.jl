@@ -2,8 +2,8 @@ using Revise
 using HighDimMixedModels
 using Random
 using RCall
-include("simulations.jl")
-using .simulations
+include("sim_helpers.jl")
+using Main.simulations #Exports simulate_design() and simulate_y()
 R"library(splmm)"
 
 
@@ -11,14 +11,14 @@ R"library(splmm)"
 ######## Comparison results of a single instance to splmm ###########
 
 #Get design matrix
-g = 25; n = fill(6, g); p = 1; q = 1000; m = p; rho = 0.2;
+g = 50; n = fill(3, g); q = 2; p = 1000; m = q; rho = 0.2;
 Random.seed!(350)
-X, G, Z, grp = simulate_design(; n=n, p=p, q=q, m=m, rho=rho)
+X, G, Z, grp = simulate_design(; n=n, q=q, p=p, m=m, rho=rho)
 
 
 #Specify parameters
-βun = [1]
-βpen = vcat([2,4,3,3], zeros(q-4))
+βun = [1, 2]
+βpen = vcat([4,3,3], zeros(q-3))
 theta = Lid = sqrt(0.56)
 σ² = 0.25^2
 y = simulations.simulate_y(X, G, Z, grp, βun, βpen, theta, σ²)
@@ -26,10 +26,17 @@ control = Control()
 
 est = lmmlasso(X, G, y, grp, Z; 
         standardize = false, penalty = "scad", 
-        λ=150.0, scada = 3.7, wts = fill(1.0, size(G)[2]), 
+        λ=100.0, scada = 3.7, wts = fill(1.0, size(G)[2]), 
         init_coef = nothing, ψstr="ident", control=control)
 
 
+R"X = $X"
+R"G = $G"
+R"XG = cbind(X, G)"
+R"y = $y"
+R"Z = $Z"
+R"grp = factor($grp, levels = 1:$g)"
+R"fit = splmm(x=XG,y=y,z=X,grp=grp,lam1=100.0,lam2=10.0, nonpen.L = 1:3, penalty.b=\"scad\", penalty.L=\"scad\")"
 
 
 ####Simulations######
@@ -70,34 +77,9 @@ end
 NSIM = 100
 
 
-
-
 sim_results = run_simulations(X, G, Z, grp, βun, βpen, Ldiag, "diag", σ², control, NSIM, 25.0)
 
 
-
-
-
-
-
-
-
-
-Random.seed!(350)
-function simulation()    
-    d = Normal()
-    x = rand(d, 5)
-end
-
-
-function simple_simulations()
-    for _ in 1:10
-        y = simulations.simulate_y(X, G, Z, grp, βun, βpen, Lid, σ²)
-        println(y[1:3])
-    end
-end
-
-simple_simulations()
 
 
 

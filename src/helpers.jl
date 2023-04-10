@@ -224,7 +224,7 @@ end
 """
 Armijo Rule
 """
-function armijo!(XGgrp, ygrp, invVgrp, β, j, p, cut, 
+function armijo!(XGgrp, ygrp, invVgrp, β, j, q, cut, 
     hessj_untrunc::Real, hessj::Real, penalty, 
     λ, a, fct_old, converged, control)
     
@@ -233,7 +233,7 @@ function armijo!(XGgrp, ygrp, invVgrp, β, j, p, cut,
     #Calculate direction
     grad = β[j]*hessj_untrunc - cut
     
-    if j in 1:p
+    if j in 1:q
         dir = -grad/hessj
     elseif penalty == "lasso"
         dir = median([(λ[j] - grad)/hessj, -β[j], (-λ[j] - grad)/hessj])
@@ -257,7 +257,7 @@ function armijo!(XGgrp, ygrp, invVgrp, β, j, p, cut,
 
             βnew[j] = β[j] + control.ainit*control.δ^l*dir
             negllnew = get_negll(invVgrp, ygrp, XGgrp, βnew)
-            fct_new = get_cost(negllnew, βnew[(p+1):end], penalty, λ[(p+1):end], a)
+            fct_new = get_cost(negllnew, βnew[(q+1):end], penalty, λ[(q+1):end], a)
             addΔ = control.ainit*control.δ^l*control.ρ*Δk
 
             if fct_new <= fct + addΔ
