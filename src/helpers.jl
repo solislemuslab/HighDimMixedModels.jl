@@ -18,10 +18,10 @@ OUTPUT
 """
 function var_y(L, Zgrp, σ²)
     
-    q = size(Zgrp[1])[2]
+    m = size(Zgrp[1])[2]
     
     if isa(L, Number)
-        Ψ = (L^2)I(q)
+        Ψ = (L^2)I(m)
     elseif isa(L, Vector)
         Ψ = Diagonal(L.^2)
     else
@@ -243,7 +243,7 @@ function armijo!(XGgrp, ygrp, invVgrp, β, j, q, cut,
 
     if dir != 0
         #Calculate Δk
-        if j in 1:p
+        if j in 1:q
             Δk = dir*grad + control.γ*dir^2*hessj
         elseif penalty == "lasso"
             Δk = dir*grad + control.γ*dir^2*hessj + λ[j]*(abs(β[j]+dir)-abs(β[j]))

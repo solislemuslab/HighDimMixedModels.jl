@@ -12,7 +12,7 @@ using Parameters
 using RCall
 using MLBase
 
-include("../src/simulations.jl")
+include("../src/sim_helpers.jl")
 import Main.simulations as sim
 ##Include lmmSCAD code
 R"source(\"../R/lmmSCAD/helpers.R\")"
@@ -31,9 +31,9 @@ R"tol=10^(-2); trace=1; maxIter=1000; maxArmijo=20; number=5; a_init=1; delta=0.
 R"control = splmmControl()"
 
 # Simulate a dataset 
+p = 5
+q = 3
 m = 3
-p = 3
-q = 5
 X, G, Z, grp = sim.simulate_design(p=p, q=q, m=m)
 g = length(unique(grp))
 N = length(grp)
@@ -237,7 +237,7 @@ for j in active_set
     cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
     R"cut[$j] = $cut"
     arm = hdmm.armijo!(XGgrp, ygrp, invVgrp, βiter, 
-    j, p, cut, hess_untrunc[j], hess[j], 
+    j, q, cut, hess_untrunc[j], hess[j], 
     "scad", λwtd, a, fct_old, 0, control)
     println("The new value of β is $(βiter) with function value $(arm.fct)")
     global fct_old = arm.fct    
@@ -280,7 +280,7 @@ R"rIter <- y-XG[,activeset,drop=FALSE]%*%βiter[activeset,drop=FALSE]"
 R"resGrp <- split(rIter,grp)"
 
 R"optRes <- nlminb(Liter_R,MLpdIdentFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
-LPsi=diag(p),lower = 10^(-6), upper = 100)"
+LPsi=diag(q),lower = 10^(-6), upper = 100)"
 
 
 @testset "L identity structure update function" begin

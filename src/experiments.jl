@@ -1,35 +1,32 @@
 using Revise
-using HighDimMixedModels
 using Random
 using RCall
+
+
 include("sim_helpers.jl")
 using Main.simulations #Exports simulate_design() and simulate_y()
-R"library(splmm)"
-
 
 
 ######## Comparison results of a single instance to splmm ###########
-
 #Get design matrix
 g = 50; n = fill(3, g); q = 2; p = 1000; m = q; rho = 0.2;
 Random.seed!(350)
 X, G, Z, grp = simulate_design(; n=n, q=q, p=p, m=m, rho=rho)
 
-
 #Specify parameters
 βun = [1, 2]
-βpen = vcat([4,3,3], zeros(q-3))
+βpen = vcat([4,3,3], zeros(p-3))
 theta = Lid = sqrt(0.56)
 σ² = 0.25^2
 y = simulations.simulate_y(X, G, Z, grp, βun, βpen, theta, σ²)
-control = Control()
+control = HighDimMixedModels.Control()
 
 est = lmmlasso(X, G, y, grp, Z; 
         standardize = false, penalty = "scad", 
         λ=100.0, scada = 3.7, wts = fill(1.0, size(G)[2]), 
         init_coef = nothing, ψstr="ident", control=control)
 
-
+R"library(splmm)"
 R"X = $X"
 R"G = $G"
 R"XG = cbind(X, G)"

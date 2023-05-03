@@ -180,10 +180,11 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     # ---------------------------------------------
 
     #Algorithm allocations
-    βiter = βstart
-    Liter = Lstart
+    βiter = copy(βstart)
+    Liter = copy(Lstart)
     σ²iter = σ²start
     cov_iter = vcat(ndims(Liter) == 2 ? vec(Liter) : Liter, sqrt(σ²iter))
+    neglike_iter = neglike_start
     fct_iter = fct_start
     
     convβ = norm(βiter)^2
@@ -191,7 +192,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     conv_fct = fct_iter
 
     do_all = false
-    converged = 0
+    converged = 0 #Make 1 if we fail to converge
     counter_in = 0
     global counter = 0
 
@@ -201,7 +202,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         control.trace > 2 && println("Cost before iteration $counter: $fct_iter")
 
         if counter == control.max_iter 
-            println("Maximum of $counter iterations reached")
+            println("$counter iterations reached without convergence")
             converged = 1
         end
         
@@ -268,7 +269,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
             end
         end
 
-        # Optimization of σ²
+        #Optimization of σ²
         σ²iter = σ²update(XGgrp, ygrp, Zgrp, βiter, Liter, control.var_int)
         
         #Vector of variance/covariance parameters
@@ -279,8 +280,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         invVgrp = [inv(V) for V in Vgrp]
 
         #Calculate new objective function
-        neglike = get_negll(invVgrp, ygrp, XGgrp, βiter)
-        fct_iter = get_cost(neglike, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
+        neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
+        fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
 
         #Check convergence
         convβ = norm(βiter-βold)/(1+norm(βiter))
@@ -306,16 +307,50 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
             push!(Zgrp, Zᵢ); push!(XGgrp, XGᵢ)
         end
     end
+    
+    #In case of identity or diagonal covariance structure, form matrix version of L for future calculations
+    if isa(Liter, Number)
+        Lmat = L*I(m)
+    elseif isa(Liter, Vector)
+        Lmat = Diagonal(Liter)
+    else #Symmetric, aka matrix 
+        Lmat = Liter
+    end
 
+    #Predicted random effects
+    resid = [yᵢ - XGᵢ*βiter for (yᵢ, XGᵢ) in zip(ygrp, XGgrp)]
+    u = sqrt(σ²iter)*[inv(Lmat'* Zᵢ' * Zᵢ * Lmat + σ²iter*I(m)) * Lmat' * Zᵢ' * residᵢ for (Zᵢ, residᵢ) in zip(Zgrp, resid)]
+    b = [Lmat*uᵢ for uᵢ in u]/sqrt(σ²iter)
 
-    #Prediction of random effects
+    #Fitted values and residuals
+    fitted = [XGᵢ*βiter + Zᵢ*bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
+    resid = [residᵢ - Zᵢ*bᵢ for (residᵢ, Zᵢ, bᵢ) in zip(resid, Zgrp, b)]
 
+    #Number of covariance parameters
+    nz_covpar = sum(Liter .!= 0) 
+    if isa(Liter, Matrix)
+        n_covpar = m*(m+1) 
+    elseif isa(Liter, Vector)
+        n_covpar = m
+    else #scalar
+        n_covpar = 1
+    end
+    n_covpar == nz_covpar && println("$(n_covpar-nz_covpar) redundant covariance parameters (set to 0)")
+    
+    #Criteria
+    npar = sum(βiter .!= 0) + n_covpar + 1
+    deviance = 2*neglike_iter
+    aic = deviance + 2*npar
+    bic = deviance + log(N)*npar
 
-    #Final calculations
-
-
-    #Form output and return
-    return βiter, Liter, σ²iter, counter
+    #Return
+    out = (data = (x = X, G = G, Z = z, y = y, grp = grp), weights = weights, 
+    init_coef = (βstart = βstart, Lstart = Lstart, σ²start = σ²start), init_log_like = -neglike_start, init_objective = fct_start, 
+    penalty = penalty, λ = λ, scada = scada, σ² = σ²iter, L = Lmat, fixef = βiter, ranef = b, fitted = fitted, 
+    resid = resid, log_like = -neglike_iter, objective = fct_iter, npar = npar, deviance = deviance, aic = aic, bic = bic,
+    iterations = counter, ψstr = ψstr, ψ = Lmat * Lmat', control = control)
+    
+    return out
 
 end
 
