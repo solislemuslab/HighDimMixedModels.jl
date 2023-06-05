@@ -130,7 +130,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         XGor = copy(XG)
         meansx = mean(XG[:,Not(1)], dims=1)
         sdsx = std(XG[:,Not(1)], dims=1)
-        XG = (XG[:,Not(1)] .- means) ./ sds
+        XG = (XG[:,Not(1)] .- meansx) ./ sdsx
         XG = [fill(1, N) XG]
 
         Zor = copy(Z)
@@ -158,7 +158,11 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     else
         βstart, Lstart, σ²start = init_coef
     end
+    
+    #Number of non-zeros in initial fixed-effect estimates 
+    nz_start = sum(βstart .!= 0)
 
+    #Get L in form specified by ψstr
     if ψstr == "sym"
         Lstart = Matrix(Lstart*I(m))
     elseif ψstr == "diag"
@@ -249,7 +253,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
             end 
         end
 
-        #---Optimization with respect to covariance parameters ----------------------------
+        #---Optimization with respect to random effect parameters ----------------------------
         #------------------------------------------------------------------------------------
 
         if ψstr == "ident"
@@ -262,8 +266,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
                 L_diag_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
             end
         else  #ψstr == "sym"
-            for i in 2:m
-                for j in 1:(i-1)
+            for i in 1:m
+                for j in 1:i
                     L_sym_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), control.var_int, control.cov_int, control.thres)
                 end
             end
@@ -282,7 +286,13 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         #Calculate new objective function
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
+        
 
+        #Inserted to prevent covergence issues
+        if neglike_iter < 0
+            error("log likelihood is positive, model is interpolating data. Choose larger λ.")
+        end
+        
         #Check convergence
         convβ = norm(βiter-βold)/(1+norm(βiter))
         conv_cov = norm(cov_iter-cov_old)/(1+norm(cov_iter))
@@ -296,8 +306,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
 
     #Get coefficients and design matrices on the original scale 
     if (standardize)
-        βiter[Not(1)] = βiter[Not(1)] ./ sdsx
-        βiter[1] = βiter[1] - sum(meansx .* βiter[Not(1)])
+        βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
+        βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
 
         XG = XGor
         Z = Zor
@@ -310,7 +320,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     
     #In case of identity or diagonal covariance structure, form matrix version of L for future calculations
     if isa(Liter, Number)
-        Lmat = L*I(m)
+        Lmat = Liter*I(m)
     elseif isa(Liter, Vector)
         Lmat = Diagonal(Liter)
     else #Symmetric, aka matrix 
@@ -329,26 +339,29 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     #Number of covariance parameters
     nz_covpar = sum(Liter .!= 0) 
     if isa(Liter, Matrix)
-        n_covpar = m*(m+1) 
+        n_covpar = m*(m+1)/2 
     elseif isa(Liter, Vector)
         n_covpar = m
     else #scalar
         n_covpar = 1
     end
-    n_covpar == nz_covpar && println("$(n_covpar-nz_covpar) redundant covariance parameters (set to 0)")
+    n_covpar == nz_covpar || println("$(n_covpar-nz_covpar) redundant variance/covariance parameters (set to 0)")
     
+    #Number of non-zeros in final fixed effect estimates
+    nz = sum(βiter .!= 0)
+
     #Criteria
-    npar = sum(βiter .!= 0) + n_covpar + 1
+    npar = sum(βiter .!= 0) + n_covpar 
     deviance = 2*neglike_iter
     aic = deviance + 2*npar
     bic = deviance + log(N)*npar
 
     #Return
-    out = (data = (x = X, G = G, Z = z, y = y, grp = grp), weights = weights, 
+    out = (data = (X = X, G = G, Z = Z, y = y, grp = grp), weights = wts, 
     init_coef = (βstart = βstart, Lstart = Lstart, σ²start = σ²start), init_log_like = -neglike_start, init_objective = fct_start, 
-    penalty = penalty, λ = λ, scada = scada, σ² = σ²iter, L = Lmat, fixef = βiter, ranef = b, fitted = fitted, 
-    resid = resid, log_like = -neglike_iter, objective = fct_iter, npar = npar, deviance = deviance, aic = aic, bic = bic,
-    iterations = counter, ψstr = ψstr, ψ = Lmat * Lmat', control = control)
+    init_nz = nz_start, penalty = penalty, λ = λ, scada = scada, σ² = σ²iter, L = Lmat, fixef = βiter, ranef = b, fitted = fitted, 
+    resid = resid, log_like = -neglike_iter, objective = fct_iter, npar = npar, nz =nz, deviance = deviance, 
+    aic = aic, bic = bic, iterations = counter, ψstr = ψstr, ψ = Lmat * Lmat', control = control)
     
     return out
 

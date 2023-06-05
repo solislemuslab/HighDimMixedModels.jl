@@ -12,7 +12,7 @@ using Parameters
 using RCall
 using MLBase
 
-include("../src/sim_helpers.jl")
+include("../scripts/sim_helpers.jl")
 import Main.simulations as sim
 ##Include lmmSCAD code
 R"source(\"../R/lmmSCAD/helpers.R\")"
