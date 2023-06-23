@@ -1,16 +1,18 @@
 # ]activate test
 # ]dev HighDimMixedModels
 
-using HighDimMixedModels
+#using HighDimMixedModels
 using ZipFile
 using CSV
 using DataFrames
+using DelimitedFiles
+using Serialization
 
 r = ZipFile.Reader("data/dim1000_random5_rho0.6_nz10_covid.zip")
-λs = Float64.([5])
-res_matrix = Array{Any}(undef, length(r.files)-1, length(λs))
+λs = Float64.(30:20:70)
+res_matrix = Array{Any}(undef, 2, length(λs))
 
-for (i, f) in enumerate([r.files[70]]) #First file is just the folder
+for (i, f) in enumerate(r.files[70:71]) #First file is just the folder
     
     println("Filename: $(f.name)")
     println("File number $(i)")
@@ -44,16 +46,21 @@ for (i, f) in enumerate([r.files[70]]) #First file is just the folder
             println("BIC is $(est.bic)")
             println("Estimated L is $(est.L)")
 
-            res_matrix[i,j] = est
+            #Insert the resulting fit to the results matrix but remove the
+            #field that has all the data in it for memory efficiency 
+            res_matrix[i,j] = Base.structdiff(est, (data = 1,))
         
         catch e
             println("An error occurred in file $(f.name), λ = $λ: $e")
+            res_matrix[i,j] = "error"
         end
 
 
     end
 
 end 
+
+serialize("serial.txt", res_matrix)
 
 # f = r.files[2]
 # println("Filename: $(f.name)")
