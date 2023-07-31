@@ -1,10 +1,10 @@
 module HighDimMixedModels
-
 export lmmlasso
 export Control
 
 include("helpers.jl")
 using Parameters #Supplies macro for structs with default field values
+using MLBase #Supplies k-fold cross validation for initial lasso fit
 
 """
 Algorithm Hyper-parameters

@@ -3,13 +3,16 @@ using Serialization
 using CSV
 using DataFrames
 
+GWAS = true
+
 #Matrix to store result for best lambda
-best_results = Matrix{Any}(undef, 200*28, 9+25+1000)
+full_p =  GWAS ? 1001 : 1000
+best_results = Matrix{Any}(undef, 200*10, 9+25+full_p)
 
 #Get names of serialized files
-dir_path = "sim_results/"
+dir_path =  GWAS ? "sim_results/gwas/" : "sim_results/"
 setting_names = readdir(dir_path)
-setting_names = setting_names[startswith.(setting_names, "dim")]
+setting_names = setting_names[endswith.(setting_names, "results.txt")]
 
 #Iterate through each setting
 global i = 1 #Index of next row to fill in in best_results
@@ -20,8 +23,13 @@ for setting_name in setting_names
 
     # How many true non-zero parameters are there? 
     # Note, all true non-zeros come at the beginning of the coefficient vector
-    pattern = r"nz(\d+)"
-    true_nz = parse(Int, match(pattern, setting_name).captures[1])
+    
+    if !GWAS
+        pattern = r"nz(\d+)"
+        true_nz = parse(Int, match(pattern, setting_name).captures[1])
+    else 
+        true_nz = 10
+    end
 
     #Iterate through each data file in the setting
     for row in eachrow(all_setting_results)
@@ -55,7 +63,7 @@ for setting_name in setting_names
             added_row = [added_row; vec_ψ; fill(missing, 25-length(vec_ψ))]
 
             # Add beta estimates
-            added_row = [added_row; result.fixef; fill(missing, 1000 - length(result.fixef))]
+            added_row = [added_row; result.fixef; fill(missing, full_p - length(result.fixef))]
 
             # Add row to matrix of best results
             best_results[i,:] = added_row
@@ -67,11 +75,11 @@ end
 
 #Create dataframe
 colnames = ["setting" ; "data_id"; "lambda"; "loglike"; "aic"; "bic"; "n_nz"; "tp"; "sigma"; 
-            ["psi_$i" for i in 1:25]; ["beta_$i" for i in 1:1000]]
+            ["psi_$i" for i in 1:25]; ["beta_$i" for i in 1:full_p]]
 best_results = DataFrame(best_results[1:i-1,:], colnames)
 
 # Define the output file name 
-file_path = "sim_results/best_results.csv"
+file_path = GWAS ? "sim_results/GWAS_best_results.csv" : "sim_results/best_results.csv"
 
 # Write the data to file
 CSV.write(file_path, best_results)

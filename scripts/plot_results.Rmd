@@ -1,0 +1,781 @@
+---
+title: "Plotting Results"
+author: "Evan Gorstein"
+date: "2023-07-30"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+
+# set plotting theme -----------
+theme_set(theme_bw())
+theme_update(panel.grid = element_blank())
+getwd()
+```
+
+# Read in the data:
+```{r}
+gene_results <- read_csv("../sim_results/best_results.csv")
+gwas_results <- read_csv("../sim_results/gwas/best_results.csv")
+```
+
+These data frames contain the fits with the best two BIC's (across all lambdas) for each dataset generated under each setting.
+
+
+# Gene expression results
+Let's check on the count for each setting
+
+```{r}
+gene_results %>%
+  count(setting)
+```
+
+These numbers should all be 200. Unfortunately, they're not all 200 because for some settings not all 100 data sets receive top two results because some datasets failed to converge for all lambdas.
+
+Looking at just the best lambda: 
+```{r}
+best_gene_results <- gene_results %>% 
+  arrange(setting, data_id, bic) %>% 
+  group_by(setting, data_id) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+count(best_gene_results, setting)
+```
+These numbers should all be 100. 
+
+## Plotting gene results for nz = 5 
+
+### False positive rate
+In each of these boxplots, the data being plotted are the FPRs of a 100 models fit to 100 different simulated datasets. In particular, there is one model for each dataset, the model that minimizes BIC.
+```{r}
+fp <- best_gene_results %>%
+  filter(str_detect(setting, "nz5")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "covid_(.*)-", group = 1),
+    p = factor(
+      str_extract(setting, "dim([0-9]+)", group = 1),
+      levels = c('500', "1000")
+    )
+  ) %>%
+  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = (n_nz - tp)/(as.numeric(as.character(p))-5), col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9)) +
+  facet_grid(`Correlated predictors` ~ p) +
+  labs(y = "False positive rate") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #strip.text.x = element_text(size = 20),
+        #strip.text.y = element_text(size = 10), 
+        text = element_text(size = 15), 
+        axis.text.y = element_text(size = 10)) +
+  scale_y_continuous(labels = scales::percent, sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
+  scale_color_brewer(type = "qual")
+
+ggsave(
+    "../plots/fp_nz5.pdf",
+    fp,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+
+```
+
+### True positives
+
+```{r}
+tp <- best_gene_results %>%
+  filter(str_detect(setting, "nz5")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "covid_(.*)-", group = 1),
+    p = factor(
+      str_extract(setting, "dim([0-9]+)", group = 1),
+      levels = c('500', "1000")
+    )
+  ) %>% 
+  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = tp, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9)) +
+  facet_grid(`Correlated predictors` ~ p) +
+  labs(y = "True positives (out of 5)") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #strip.text.x = element_text(size = 20),
+        #strip.text.y = element_text(size = 10), 
+        text = element_text(size = 15), 
+        axis.text.y = element_text(size = 10)) +
+  scale_y_continuous(labels = scales::label_number(accuracy=1), limits = c(0,5),
+                     sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
+  scale_color_brewer(type = "qual")
+
+ggsave(
+  "../plots/tp_nz5.pdf",
+  tp,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+All exactly 5! Perfect results
+
+### Parameter estimates
+
+How do we do at estimating the unpenalized intercept
+```{r}
+df_true <- data.frame(y_value = 1) 
+
+unp <- best_gene_results %>%
+  filter(str_detect(setting, "nz5")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "covid_(.*)-", group = 1),
+    p = factor(
+      str_extract(setting, "dim([0-9]+)", group = 1),
+      levels = c('500', "1000")
+    )
+  ) %>% 
+  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = beta_1, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9)) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  facet_grid(`Correlated predictors` ~ p) +
+  labs(y = "Estimated intercept") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #strip.text.x = element_text(size = 20),
+        #strip.text.y = element_text(size = 10), 
+        legend.title = element_blank(),
+        text = element_text(size = 15), 
+        axis.text.y = element_text(size = 10),
+        legend.text = element_text(size = 10)) +
+  scale_y_continuous(labels = scales::label_number(accuracy=.1), limits = c(0,2),
+                     sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+
+ggsave(
+  "../plots/unp_nz5.pdf",
+  unp,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+How do we do at estimating the penalized second component of beta?
+```{r}
+df_true <- data.frame(y_value = 2) 
+
+penal <- best_gene_results %>%
+  filter(str_detect(setting, "nz5")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "covid_(.*)-", group = 1),
+    p = factor(
+      str_extract(setting, "dim([0-9]+)", group = 1),
+      levels = c('500', "1000")
+    )
+  ) %>% 
+  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = beta_2, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9)) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  facet_grid(`Correlated predictors` ~ p) +
+  labs(y = "Estimated parameter") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #strip.text.x = element_text(size = 20),
+        #strip.text.y = element_text(size = 10), 
+        legend.title = element_blank(),
+        text = element_text(size = 15), 
+        axis.text.y = element_text(size = 10),
+        legend.text = element_text(size = 10)) +
+  scale_y_continuous(labels = scales::label_number(accuracy=.1), limits = c(1,3),
+                     sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+
+ggsave(
+  "../plots/penal_nz5.pdf",
+  penal,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+LASSO is biased downward!
+
+How do we do at estimating the variance component?
+```{r}
+df_true <- data.frame(y_value = .56) 
+
+var_comp <- best_gene_results %>%
+  filter(str_detect(setting, "nz5")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "covid_(.*)-", group = 1),
+    p = factor(
+      str_extract(setting, "dim([0-9]+)", group = 1),
+      levels = c('500', "1000")
+    )
+  ) %>% 
+  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = psi_1, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9)) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  facet_grid(`Correlated predictors` ~ p) +
+  labs(y = "Estimated parameter") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        #strip.text.x = element_text(size = 20),
+        #strip.text.y = element_text(size = 10), 
+        legend.title = element_blank(),
+        text = element_text(size = 15), 
+        axis.text.y = element_text(size = 10),
+        legend.text = element_text(size = 10)) +
+  scale_y_continuous(labels = scales::label_number(accuracy=.1),
+                     sec.axis = 
+                       sec_axis(~ . , name = "Correlated predictors?", 
+                                breaks = NULL, labels = NULL)) +
+  scale_x_continuous(sec.axis = 
+                       sec_axis(~ . , name = "Fixed effect dimension", 
+                                breaks = NULL, labels = NULL)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+ggsave(
+  "../plots/var_comp_nz5.pdf",
+  var_comp,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+All estimates are biased downward.
+
+
+
+
+
+## Plotting gene results for nz = 10
+
+### False positive rate
+
+```{r}
+q.labs = c("1 r.e.", "3 random effects", "5 r.e")
+names(q.labs) <- c("1", "3", "5")
+
+
+fp_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )
+  ) %>%
+  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = (n_nz - tp)/990, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9)) +
+  labs(y = "False positive rate", x = "Random effect covariance") +
+  facet_grid(
+    `Correlated predictors` ~ q,
+    scales = "free_x",
+    space = "free",
+    labeller = labeller(q = q.labs) 
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  theme(#strip.text.x = element_text(size = 10 ),
+        #strip.text.y = element_text(size = 10), 
+        text = element_text(size = 13), 
+        axis.text.y = element_text(size = 10)) +
+  scale_y_continuous(labels = scales::percent, 
+                     sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+  scale_color_brewer(type = "qual")
+
+
+# Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../plots/fp_nz10.pdf",
+  fp_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+) 
+
+fp_nz10
+```
+
+
+### True positives
+
+```{r}
+tp_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    correlation = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    ) 
+  ) %>%
+  mutate(`Correlated predictors` = if_else(correlation == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = tp, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9))  +
+  labs(y = "True positives (out of 10)", x = "Random effect covariance") +
+  facet_grid(
+    `Correlated predictors` ~ q,
+    labeller = labeller(q = q.labs),
+    scales = "free_x",
+    space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+    scale_y_continuous(labels = scales::label_number(accuracy=1), 
+                       sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+    theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual")
+    
+tp_nz10
+
+ggsave( 
+  "../plots/tp_nz10.pdf",
+  tp_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+) 
+```
+
+Combining false postive and true positive plots
+
+```{r}
+full_plot = fp_nz10 / tp_nz10 + plot_layout(guides = "collect") & theme(legend.position = 'right')
+
+ggsave("../plots/fullplot_nz10.pdf",
+       full_plot,
+       width = 6,
+       height = 6,
+       units = "in"
+       )
+```
+
+### Parameter estimates
+
+How do we do at estimating the unpenalized intercept
+```{r}
+df_true <- data.frame(y_value = 1) 
+
+unp_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    correlation = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    ) 
+  ) %>%
+  mutate(`Correlated predictors` = if_else(correlation == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = beta_1, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9))  +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = "Estimated Intercept", x = "Random effect covariance") +
+  facet_grid(
+    `Correlated predictors` ~ q,
+    labeller = labeller(q = q.labs),
+    scales = "free_x",
+    space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+    scale_y_continuous(labels = scales::label_number(accuracy=1), 
+                       sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+    theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+    
+unp_nz10
+ggsave(
+  "../plots/unp_nz10.pdf",
+  unp_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+
+```
+
+```{r}
+df_true <- data.frame(y_value = -1) 
+
+penal_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    correlation = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    ) 
+  ) %>%
+  mutate(`Correlated predictors` = if_else(correlation == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = beta_6, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9))  +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = "Estimated Parameter", x = "Random effect covariance") +
+  facet_grid(
+    `Correlated predictors` ~ q,
+    labeller = labeller(q = q.labs),
+    scales = "free_x",
+    space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+    scale_y_continuous(labels = scales::label_number(accuracy=.1), 
+                       sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+    theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+    
+penal_nz10
+ggsave(
+  "../plots/penal_nz10.pdf",
+  penal_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+```{r}
+df_true1 <- data.frame(cov_str = c(1, 2, 3), y_value = c(.56, 3, 3), q = c(1, 3, 3)) 
+df_true2 <- data.frame(cov_str = c(1, 2, 3), y_value = c(.56, 3, 3), q = c(3, 3, 3)) 
+df_true3 <- data.frame(cov_str = c(1, 2, 3), y_value = c(.56, 3, 3), q = c(5, 3, 3))
+
+var_comp_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    correlation = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    ) 
+  ) %>%
+  mutate(`Correlated predictors` = if_else(correlation == "0.0", "No", "Yes")) %>%
+  ggplot(aes(y = psi_1, x = cov_str)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty))  +
+  geom_segment(data = df_true1, aes(x = cov_str-.4, xend = cov_str+.4, 
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  geom_segment(data = df_true2, aes(x = cov_str-.4, xend = cov_str+.4, 
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  geom_segment(data = df_true3, aes(x = cov_str-.4, xend = cov_str+.4, 
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  labs(y = "Estimated Parameter", x = "Random effect covariance") +
+  facet_grid(
+    `Correlated predictors` ~ q,
+    labeller = labeller(q = q.labs),
+    scales = "free_x",
+    space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+    scale_y_continuous(labels = scales::label_number(accuracy=.1), 
+                       sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+    theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+var_comp_nz10
+ggsave(
+  "../plots/var_comp_nz10.pdf",
+  var_comp_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+# GWAS Results
+
+Check that there are 200 rows for each setting
+```{r}
+gwas_results %>%
+  count(setting)
+```
+
+### False negative rate
+
+```{r}
+best_gwas_results <- gwas_results %>%
+  group_by(setting, data_id) %>%
+  arrange(bic, .by_group = TRUE) %>%
+  filter(row_number() == 1)
+
+
+fp_gwas <- best_gwas_results %>%
+  mutate(
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )
+  ) %>%
+  ggplot(aes(y = (n_nz - tp)/991, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
+  labs(y = "False positive rate", x = "Random effect covariance") +
+  facet_grid(~ q, labeller = "label_both",
+    scales = "free", space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::percent) + #Not observing one outlier
+  theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual")
+
+fp_gwas
+
+ggsave(
+    "../plots/fp_gwas.pdf",
+    fp_gwas,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+
+```
+
+False positive summary stats
+```{r}
+best_gwas_results %>%
+  group_by(setting) %>%
+  summarise(fp_mn = mean(n_nz-tp), 
+            fp_min = min(n_nz-tp),
+            fp_med = median(n_nz-tp),
+            fp_max = max(n_nz-tp)
+    )
+```
+
+### True positives
+```{r}
+tp_gwas <- best_gwas_results %>%
+  mutate(
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )
+  ) %>%
+  ggplot(aes(y = tp, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
+  labs(y = "Number of true positives", x = "Random effect covariance") +
+  facet_grid(~ q, labeller = "label_both",
+             scales = "free", space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_number(accuracy = 1), limits = c(0,10)) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual")
+
+tp_gwas
+
+ggsave(
+    "../plots/tp_gwas.pdf",
+    tp_gwas,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+### Parameter estimates
+How do we do at estimating the unpenalized intercept?
+```{r}
+df_true <- data.frame(y_value = 1) 
+unp_gwas <- best_gwas_results %>%
+  mutate(
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )
+  ) %>%
+  ggplot(aes(y = beta_1, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = "Estimated Intercept", x = "Random effect covariance") +
+  facet_grid(~ q, labeller = "label_both",
+             scales = "free", space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_number(accuracy = 1)) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+unp_gwas
+
+ggsave(
+    "../plots/unp_gwas.pdf",
+    unp_gwas,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+How do we do estimating the penalized sixth component of beta?
+```{r}
+df_true <- data.frame(y_value = -1) 
+penal_gwas <- best_gwas_results %>%
+  mutate(
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )
+  ) %>%
+  ggplot(aes(y = beta_6, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = "Estimated Parameter", x = "Random effect covariance") +
+  facet_grid(~ q, labeller = "label_both",
+             scales = "free", space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_number(accuracy = .1)) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+penal_gwas 
+
+ggsave(
+    "../plots/penal_gwas.pdf",
+    penal_gwas,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+```{r}
+df_true1 <- data.frame(cov_str = c(1, 2, 3), y_value = c(.56, 3, 3), q = c(1, 3, 3)) 
+df_true2 <- data.frame(cov_str = c(1, 2, 3), y_value = c(.56, 3, 3), q = c(3, 3, 3)) 
+df_true3 <- data.frame(cov_str = c(1, 2, 3), y_value = c(.56, 3, 3), q = c(5, 3, 3))
+
+var_comp_gwas <- best_gwas_results %>%
+  mutate(
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )
+  ) %>%
+  ggplot(aes(y = psi_1, x = cov_str)) +
+  geom_boxplot(aes(col = penalty),position = position_dodge(width = 0.9), width = .3) +
+  geom_segment(data = df_true1, aes(x = cov_str-.4, xend = cov_str+.4, 
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  geom_segment(data = df_true2, aes(x = cov_str-.4, xend = cov_str+.4, 
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  geom_segment(data = df_true3, aes(x = cov_str-.4, xend = cov_str+.4, 
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  labs(y = "Estimated variance component", x = "Random effect covariance") +
+  facet_grid(~ q, labeller = "label_both",
+             scales = "free", space = "free"
+  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_number(accuracy = .1)) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10)) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+
+var_comp_gwas
+
+ggsave(
+    "../plots/var_comp_gwas.pdf",
+    var_comp_gwas,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+
+```
+
+
+
+
+
+
+
+
+
+

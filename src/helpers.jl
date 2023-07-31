@@ -3,7 +3,6 @@ using Random
 using Lasso #Needed to get initial estimates of the fixed effects
 using Optim #Needed for univariate optimization in coordinated gradient descent algorithm
 using InvertedIndices #Allows negative indexing, like in R
-using MLBase #Supplies k-fold cross validation for initial lasso fit
 
 """
 Returns covariance matrices of the responses, by group

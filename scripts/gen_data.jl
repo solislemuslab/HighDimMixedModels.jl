@@ -43,6 +43,7 @@ for (i, set) in enumerate(settings)
     # Produce 100 data-sets for this simulation setting
     for j in 1:100    
 
+        
         # Get fixed effect parameters
         βnz = (set.nz == 5) ? βnz1 : βnz2
         βun = βnz[1:set.q]
@@ -76,4 +77,3 @@ for (i, set) in enumerate(settings)
     end
 
 end
-

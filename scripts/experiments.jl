@@ -1,18 +1,15 @@
-# ]activate test
-# ]dev HighDimMixedModels
-
-#using HighDimMixedModels
+using HighDimMixedModels
 using ZipFile
 using CSV
 using DataFrames
 using DelimitedFiles
 using Serialization
 
-r = ZipFile.Reader("data/dim1000_random5_rho0.6_nz10_covid.zip")
-λs = Float64.(30:20:70)
-res_matrix = Array{Any}(undef, 2, length(λs))
-
-for (i, f) in enumerate(r.files[70:71]) #First file is just the folder
+r = ZipFile.Reader("data/GWAS/random3_covsym.zip")
+λs = Float64.(46:2:56)
+res_matrix = Array{Any}(undef, 5, length(λs))
+file_index = findall([f.name for f in r.files] .== "random3_covsym/data47.csv")[1]
+for (i, f) in enumerate([r.files[file_index]]) #First file is just the folder
     
     println("Filename: $(f.name)")
     println("File number $(i)")
@@ -23,21 +20,22 @@ for (i, f) in enumerate(r.files[70:71]) #First file is just the folder
     
     grp = string.(df[:,1])
     
-    X = Matrix(df[:,X_names])
-    G = Matrix(df[:,G_names])
+    X = Matrix{Float64}(df[:,X_names])
+    G = Matrix{Float64}(df[:,G_names])
     y = df[:,end]
     control = Control()
     control.trace = 3
-    control.tol = 1e-2
+    control.tol = 1e-4
+    control.cov_int = (-5, 5)
 
     for (j, λ) in enumerate(λs)
 
         println("λ is $λ")
         try 
             est = lmmlasso(X, G, y, grp; 
-                standardize = true, penalty = "scad", 
+                standardize = true, penalty = "lasso", 
                 λ=λ, scada = 3.7, wts = fill(1.0, size(G)[2]), 
-                init_coef = nothing, ψstr="ident", control=control)
+                init_coef = nothing, ψstr="sym", control=control)
         
             println("Model converged! Hurrah!")
             println("Initial number of non-zeros is $(est.init_nz)")
@@ -60,7 +58,7 @@ for (i, f) in enumerate(r.files[70:71]) #First file is just the folder
 
 end 
 
-serialize("serial.txt", res_matrix)
+#serialize("serial.txt", res_matrix)
 
 # f = r.files[2]
 # println("Filename: $(f.name)")
