@@ -5,16 +5,19 @@ using DataFrames
 using DelimitedFiles
 using Serialization
 
-r = ZipFile.Reader("data/GWAS/random3_covsym.zip")
-λs = Float64.(46:2:56)
-res_matrix = Array{Any}(undef, 5, length(λs))
-file_index = findall([f.name for f in r.files] .== "random3_covsym/data47.csv")[1]
-for (i, f) in enumerate([r.files[file_index]]) #First file is just the folder
+# r = ZipFile.Reader("data/GWAS/random3_covsym.zip")
+λs = Float64.(50:2:60)
+res_matrix = Array{Any}(undef, 1, length(λs))
+data_dir = "data/OTU/random1_covid"
+file_names = readdir(data_dir)
+
+# for (i, f) in enumerate(r.files[2:end]) #First file is just the folder
+for (i, f) in enumerate([file_names[50]])
     
-    println("Filename: $(f.name)")
-    println("File number $(i)")
+    println("Filename: $f")
+    println("File number $i")
     
-    df = CSV.read(f, DataFrame)
+    df = CSV.read("$data_dir/$f", DataFrame)
     X_names = [col for col in names(df) if startswith(col, "X")]
     G_names = [col for col in names(df) if startswith(col, "G")]
     
@@ -25,17 +28,18 @@ for (i, f) in enumerate([r.files[file_index]]) #First file is just the folder
     y = df[:,end]
     control = Control()
     control.trace = 3
-    control.tol = 1e-4
-    control.cov_int = (-5, 5)
+    #control.tol = 1e-4
+    #control.cov_int = (-5, 5)
+    #control.var_int = (0, 100)
 
     for (j, λ) in enumerate(λs)
 
         println("λ is $λ")
         try 
             est = lmmlasso(X, G, y, grp; 
-                standardize = true, penalty = "lasso", 
+                standardize = true, penalty = "scad", 
                 λ=λ, scada = 3.7, wts = fill(1.0, size(G)[2]), 
-                init_coef = nothing, ψstr="sym", control=control)
+                init_coef = nothing, ψstr="ident", control=control)
         
             println("Model converged! Hurrah!")
             println("Initial number of non-zeros is $(est.init_nz)")
