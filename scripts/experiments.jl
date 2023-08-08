@@ -6,13 +6,15 @@ using DelimitedFiles
 using Serialization
 
 # r = ZipFile.Reader("data/GWAS/random3_covsym.zip")
-λs = Float64.(50:2:60)
-res_matrix = Array{Any}(undef, 1, length(λs))
+λs = Float64.(1000:10:1100)
+res_matrix = Array{Any}(undef, 2, length(λs))
 data_dir = "data/OTU/random1_covid"
 file_names = readdir(data_dir)
+filter!(x -> occursin("erdos_renyi", x), file_names)
+println(length(file_names))
 
 # for (i, f) in enumerate(r.files[2:end]) #First file is just the folder
-for (i, f) in enumerate([file_names[50]])
+for (i, f) in enumerate(file_names[60:61])
     
     println("Filename: $f")
     println("File number $i")
@@ -25,19 +27,20 @@ for (i, f) in enumerate([file_names[50]])
     
     X = Matrix{Float64}(df[:,X_names])
     G = Matrix{Float64}(df[:,G_names])
+    G = G[:,1:end-1] #Remove the last column for microbiome data because of sum to 1 constraint
     y = df[:,end]
     control = Control()
     control.trace = 3
     #control.tol = 1e-4
     #control.cov_int = (-5, 5)
-    #control.var_int = (0, 100)
+    control.var_int = (0, 1000)
 
     for (j, λ) in enumerate(λs)
 
         println("λ is $λ")
         try 
             est = lmmlasso(X, G, y, grp; 
-                standardize = true, penalty = "scad", 
+                standardize = false, penalty = "scad", 
                 λ=λ, scada = 3.7, wts = fill(1.0, size(G)[2]), 
                 init_coef = nothing, ψstr="ident", control=control)
         
@@ -47,6 +50,7 @@ for (i, f) in enumerate([file_names[50]])
             println("Log likelihood is $(est.log_like)")
             println("BIC is $(est.bic)")
             println("Estimated L is $(est.L)")
+            println("Estimated σ² is $(est.σ²)")
 
             #Insert the resulting fit to the results matrix but remove the
             #field that has all the data in it for memory efficiency 

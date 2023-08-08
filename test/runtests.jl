@@ -14,13 +14,8 @@ using MLBase
 
 include("../scripts/sim_helpers.jl")
 import Main.simulations as sim
-##Include lmmSCAD code
-R"print(getwd())"
-R"print(list.files(\"../R/lmmSCAD\"))"
-R"setwd(\"../R/lmmSCAD\")"
-R"print(getwd())"
-R"source(\"helpers.R\")"
-R"source(\"lmmSCAD.R\")"
+##Include code for lmmSCAD functions
+R"source(\"../R/lmmSCAD/helpers.R\")"
 R"library(splmm)"
 R"library(emulator)"
 R"library(glmnet)"

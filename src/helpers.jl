@@ -352,13 +352,13 @@ function L_sym_update!(L, XGgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int,
 
     Optim.converged(result) || error("Minimization with respect to $(coords) entry of L failed to converge")
     min = Optim.minimizer(result)
-    
     if coords[1]==coords[2] && min < thres 
         L[coords[1], coords[2]] = 0
         println("$(coords) entry of L was set to 0")
     else
         L[coords[1], coords[2]] = min
     end
+    #println("L is now $L and log-likelihood is $(Optim.minimum(result))")
 
     return Nothing
 end

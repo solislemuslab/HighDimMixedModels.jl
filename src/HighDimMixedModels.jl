@@ -27,7 +27,7 @@ Algorithm Hyper-parameters
 - thres :: If variance or covariance parameter has smaller absolute value than `thres`, parameter is set to 0
 """
 @with_kw mutable struct Control
-    tol::Float64  = 1e-4
+    tol::Float64 = 1e-4
     seed::Int = 770
     trace::Int = 2
     max_iter::Int = 1000
@@ -39,8 +39,8 @@ Algorithm Hyper-parameters
     γ::Float64 = 0.0
     lower::Float64 = 1e-6
     upper::Float64 = 1e8
-    var_int::Tuple{Float64, Float64} = (0, 100)
-    cov_int::Tuple{Float64, Float64} = (-50, 50)
+    var_int::Tuple{Float64,Float64} = (0, 100)
+    cov_int::Tuple{Float64,Float64} = (-5, 5)
     optimize_method::Symbol = :Brent
     thres::Float64 = 1e-4
 end
@@ -73,9 +73,9 @@ fixed effect parameters. Then, the random effect parameters are initialized as M
 OUTPUT
 - Fitted model
 """
-function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, grp::Vector{String}, Z::Matrix{Float64}=X; 
-    standardize = false, penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, wts::Vector{Float64}=fill(1, size(G, 2)), 
-    init_coef::Union{Vector, Nothing}=nothing, ψstr::String="diag", control=Control()) 
+function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, grp::Vector{String}, Z::Matrix{Float64}=X;
+    standardize=false, penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, wts::Vector{Float64}=fill(1, size(G, 2)),
+    init_coef::Union{Vector,Nothing}=nothing, ψstr::String="diag", control=Control())
 
 
     ##Get dimensions
@@ -98,19 +98,19 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     @assert g > 1 "Only one group, no covariance parameters can be estimated"
 
     #Intercept included checks
-    @assert X[:,1] == ones(N) "First column of X must be all ones"
-    @assert Z[:,1] == ones(N) "First column of Z must be all ones"
+    @assert X[:, 1] == ones(N) "First column of X must be all ones"
+    @assert Z[:, 1] == ones(N) "First column of Z must be all ones"
 
     #Check whether columns of Z are a subset of the columns of X, or is this not necessary?
-    
+
     #Penalty related checks
     @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
     @assert λ > 0 "λ is regularization parameter, must be positive"
     @assert all(wts .> 0) "Weights must be positive"
-    λwtd = [zeros(q); λ./wts] 
+    λwtd = [zeros(q); λ ./ wts]
     @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
     @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
-    
+
     control::HighDimMixedModels.Control #Checks control hyper parameters
 
     #Check that initial coefficients, if provided, make sense
@@ -123,50 +123,52 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     # ---------------------------------------------
 
     #Merge unpenalized and penalized design matrices
-    XG = [X G] 
+    XG = [X G]
 
     #Standardize design matrices if so desired
     if standardize
         XGor = copy(XG)
-        meansx = mean(XG[:,Not(1)], dims=1)
-        sdsx = std(XG[:,Not(1)], dims=1)
-        XG = (XG[:,Not(1)] .- meansx) ./ sdsx
+        meansx = mean(XG[:, Not(1)], dims=1)
+        sdsx = std(XG[:, Not(1)], dims=1)
+        XG = (XG[:, Not(1)] .- meansx) ./ sdsx
         XG = [fill(1, N) XG]
 
         Zor = copy(Z)
-        meansz = mean(Z[:,Not(1)], dims=1)
-        sdsz = std(Z[:,Not(1)], dims=1)
-        Z = (Z[:,Not(1)] .- meansz) ./ sdsz
+        meansz = mean(Z[:, Not(1)], dims=1)
+        sdsz = std(Z[:, Not(1)], dims=1)
+        Z = (Z[:, Not(1)] .- meansz) ./ sdsz
         Z = [fill(1, N) Z]
     end
-    
+
     #Get grouped data, i.e. lists of matrices/vectors
     Zgrp, XGgrp, ygrp = Matrix[], Matrix[], Vector[]
     for group in unique(grp)
-        Zᵢ, XGᵢ, yᵢ = Z[grp .== group,:], XG[grp .== group,:], y[grp .== group]
-        push!(Zgrp, Zᵢ); push!(XGgrp, XGᵢ); push!(ygrp, yᵢ)
+        Zᵢ, XGᵢ, yᵢ = Z[grp.==group, :], XG[grp.==group, :], y[grp.==group]
+        push!(Zgrp, Zᵢ)
+        push!(XGgrp, XGᵢ)
+        push!(ygrp, yᵢ)
     end
 
     # --- Initialize parameters -------------------
     # ---------------------------------------------
     if init_coef === nothing
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = fit(LassoModel, XG[:,Not(1)], y; select = MinCVmse(Kfold(N, 10)))
+        lassopath = fit(LassoModel, XG[:, Not(1)], y; select=MinCVmse(Kfold(N, 10)))
         βstart = coef(lassopath) #Fixed effects
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)
     else
         βstart, Lstart, σ²start = init_coef
     end
-    
+
     #Number of non-zeros in initial fixed-effect estimates 
     nz_start = sum(βstart .!= 0)
 
     #Get L in form specified by ψstr
     if ψstr == "sym"
-        Lstart = Matrix(Lstart*I(m))
+        Lstart = Matrix(Lstart * I(m))
     elseif ψstr == "diag"
-        Lstart = fill(Lstart, m) 
+        Lstart = fill(Lstart, m)
     elseif ψstr != "ident"
         error("ψstr must be one of \"sym\", \"diag\", or \"ident\"")
     end
@@ -190,26 +192,26 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     cov_iter = vcat(ndims(Liter) == 2 ? vec(Liter) : Liter, sqrt(σ²iter))
     neglike_iter = neglike_start
     fct_iter = fct_start
-    
+
     convβ = norm(βiter)^2
-    conv_cov = norm(cov_iter)^2 
+    conv_cov = norm(cov_iter)^2
     conv_fct = fct_iter
 
     do_all = false
     converged = 0 #Make 1 if we fail to converge
     counter_in = 0
-    global counter = 0
+    counter = 0
 
     while (max(convβ, conv_cov, conv_fct) > control.tol || !do_all) && (counter < control.max_iter)
-            
+
         counter += 1
         control.trace > 2 && println("Cost before iteration $counter: $fct_iter")
 
-        if counter == control.max_iter 
+        if counter == control.max_iter
             println("$counter iterations reached without convergence")
             converged = 1
         end
-        
+
         #Keep copy of variables that are being updated for convergence checking
         βold = copy(βiter)
         cov_old = copy(cov_iter)
@@ -221,12 +223,12 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         #We'll only update fixed effect parameters in "active_set"
         #See  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
         active_set = findall(βiter .!= 0)
-        
+
         if counter_in == 0 || counter_in > control.act_num
             active_set = 1:(p+q)
             counter_in = 1
             do_all = true
-        else 
+        else
             counter_in += 1
         end
 
@@ -236,22 +238,27 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
 
 
         #Update fixed effect parameters that are in active_set
-        for j in active_set 
+        for j in active_set
             cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:q
-                    βiter[j] = cut/hess[j]
-                elseif penalty == "lasso" 
-                    βiter[j] = soft_thresh(cut, λwtd[j])/hess[j]
+                    βiter[j] = cut / hess[j]
+                elseif penalty == "lasso"
+                    βiter[j] = soft_thresh(cut, λwtd[j]) / hess[j]
                 else #Scad penalty
                     βiter[j] = scad_solution(cut, hess[j], λwtd[j], scada)
-                end 
+                end
             else #Must actually perform Armijo line search 
                 fct_iter, converged = armijo!(XGgrp, ygrp, invVgrp, βiter, j, q, cut, hess_untrunc[j],
-                hess[j], penalty, λwtd, scada, fct_iter, converged, control)
-            end 
+                    hess[j], penalty, λwtd, scada, fct_iter, converged, control)
+            end
         end
+        
+        #Calculate new objective function
+        neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
+        fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
+        println("After updating fixed effects, cost is $fct_iter")
 
         #---Optimization with respect to random effect parameters ----------------------------
         #------------------------------------------------------------------------------------
@@ -260,22 +267,26 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
             #println(counter)
             #println(Liter)
             #println(σ²iter)
-            Liter = L_ident_update(XGgrp, ygrp, Zgrp, βiter, σ²iter, control.var_int, control.thres)
+            Liter = L_ident_update(XGgrp, ygrp, Zgrp, βiter, σ²iter,
+                control.var_int, control.thres)
         elseif ψstr == "diag"
-            for s in 1:m 
-                L_diag_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+            for s in 1:m
+                L_diag_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, s,
+                    control.var_int, control.thres)
             end
         else  #ψstr == "sym"
             for i in 1:m
                 for j in 1:i
-                    L_sym_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), control.var_int, control.cov_int, control.thres)
+                    #println("Updating ($i, $j) coordinate of L")
+                    L_sym_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i, j),
+                        control.var_int, control.cov_int, control.thres)
                 end
             end
         end
 
         #Optimization of σ²
         σ²iter = σ²update(XGgrp, ygrp, Zgrp, βiter, Liter, control.var_int)
-        
+
         #Vector of variance/covariance parameters
         cov_iter = vcat(ndims(Liter) == 2 ? vec(Liter) : Liter, sqrt(σ²iter))
 
@@ -286,17 +297,17 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         #Calculate new objective function
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
-        
+
 
         #Inserted to prevent covergence issues
         if neglike_iter < 0
             error("log likelihood is positive, model is interpolating data. Choose larger λ.")
         end
-        
+
         #Check convergence
-        convβ = norm(βiter-βold)/(1+norm(βiter))
-        conv_cov = norm(cov_iter-cov_old)/(1+norm(cov_iter))
-        conv_fct = abs(fct_iter-fct_old)/(1+abs(fct_iter))
+        convβ = norm(βiter - βold) / (1 + norm(βiter))
+        conv_cov = norm(cov_iter - cov_old) / (1 + norm(cov_iter))
+        conv_fct = abs(fct_iter - fct_old) / (1 + abs(fct_iter))
 
         if max(convβ, conv_cov, conv_fct) <= control.tol
             counter_in = 0 #Update all entries next iteration and if parameters still doesn't change, then call it quits
@@ -313,14 +324,15 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         Z = Zor
 
         for group in unique(grp)
-            Zᵢ, XGᵢ = Z[grp .== group,:], XG[grp .== group,:]
-            push!(Zgrp, Zᵢ); push!(XGgrp, XGᵢ)
+            Zᵢ, XGᵢ = Z[grp.==group, :], XG[grp.==group, :]
+            push!(Zgrp, Zᵢ)
+            push!(XGgrp, XGᵢ)
         end
     end
-    
+
     #In case of identity or diagonal covariance structure, form matrix version of L for future calculations
     if isa(Liter, Number)
-        Lmat = Liter*I(m)
+        Lmat = Liter * I(m)
     elseif isa(Liter, Vector)
         Lmat = Diagonal(Liter)
     else #Symmetric, aka matrix 
@@ -328,41 +340,41 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     end
 
     #Predicted random effects
-    resid = [yᵢ - XGᵢ*βiter for (yᵢ, XGᵢ) in zip(ygrp, XGgrp)]
-    u = sqrt(σ²iter)*[inv(Lmat'* Zᵢ' * Zᵢ * Lmat + σ²iter*I(m)) * Lmat' * Zᵢ' * residᵢ for (Zᵢ, residᵢ) in zip(Zgrp, resid)]
-    b = [Lmat*uᵢ for uᵢ in u]/sqrt(σ²iter)
+    resid = [yᵢ - XGᵢ * βiter for (yᵢ, XGᵢ) in zip(ygrp, XGgrp)]
+    u = sqrt(σ²iter) * [inv(Lmat' * Zᵢ' * Zᵢ * Lmat + σ²iter * I(m)) * Lmat' * Zᵢ' * residᵢ for (Zᵢ, residᵢ) in zip(Zgrp, resid)]
+    b = [Lmat * uᵢ for uᵢ in u] / sqrt(σ²iter)
 
     #Fitted values and residuals
-    fitted = [XGᵢ*βiter + Zᵢ*bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
-    resid = [residᵢ - Zᵢ*bᵢ for (residᵢ, Zᵢ, bᵢ) in zip(resid, Zgrp, b)]
+    fitted = [XGᵢ * βiter + Zᵢ * bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
+    resid = [residᵢ - Zᵢ * bᵢ for (residᵢ, Zᵢ, bᵢ) in zip(resid, Zgrp, b)]
 
     #Number of covariance parameters
-    nz_covpar = sum(Liter .!= 0) 
+    nz_covpar = sum(Liter .!= 0)
     if isa(Liter, Matrix)
-        n_covpar = m*(m+1)/2 
+        n_covpar = m * (m + 1) / 2
     elseif isa(Liter, Vector)
         n_covpar = m
     else #scalar
         n_covpar = 1
     end
     n_covpar == nz_covpar || println("$(n_covpar-nz_covpar) redundant variance/covariance parameters (set to 0)")
-    
+
     #Number of non-zeros in final fixed effect estimates
     nz = sum(βiter .!= 0)
 
     #Criteria
-    npar = sum(βiter .!= 0) + n_covpar 
-    deviance = 2*neglike_iter
-    aic = deviance + 2*npar
-    bic = deviance + log(N)*npar
+    npar = sum(βiter .!= 0) + n_covpar
+    deviance = 2 * neglike_iter
+    aic = deviance + 2 * npar
+    bic = deviance + log(N) * npar
 
     #Return
-    out = (data = (X = X, G = G, Z = Z, y = y, grp = grp), weights = wts, 
-    init_coef = (βstart = βstart, Lstart = Lstart, σ²start = σ²start), init_log_like = -neglike_start, init_objective = fct_start, 
-    init_nz = nz_start, penalty = penalty, λ = λ, scada = scada, σ² = σ²iter, L = Lmat, fixef = βiter, ranef = b, fitted = fitted, 
-    resid = resid, log_like = -neglike_iter, objective = fct_iter, npar = npar, nz =nz, deviance = deviance, 
-    aic = aic, bic = bic, iterations = counter, ψstr = ψstr, ψ = Lmat * Lmat', control = control)
-    
+    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts,
+        init_coef=(βstart=βstart, Lstart=Lstart, σ²start=σ²start), init_log_like=-neglike_start, init_objective=fct_start,
+        init_nz=nz_start, penalty=penalty, λ=λ, scada=scada, σ²=σ²iter, L=Lmat, fixef=βiter, ranef=b, fitted=fitted,
+        resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance,
+        aic=aic, bic=bic, iterations=counter, ψstr=ψstr, ψ=Lmat * Lmat', control=control)
+
     return out
 
 end

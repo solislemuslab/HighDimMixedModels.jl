@@ -12,7 +12,7 @@ using Main.simulations #Exports simulate_design() and simulate_y()
 
 
 # Global simulation variables
-n=fill(25, 10)
+n=fill(20, 50)
 grp = string.(inverse_rle(1:length(n), n))
 βnz = [1,2,4,3,3,-1,5,-3,2,2]
 Lid = sqrt(0.56)
@@ -36,7 +36,7 @@ settings = [pars1, pars2, pars3, pars4, pars5]
 # end
 
 # Type of correlation between taxa
-X_cor = "cluster"
+X_cor = "erdos_renyi"
 
 # Loop through 100 data-sets
 for j in 1:100 
@@ -47,10 +47,11 @@ for j in 1:100
     
     #Normalize design matrix by sequencing depths before generating response
     df = Matrix(df)
-    df = df ./ sum(df, dims=2)
+    #df = df ./ sum(df, dims=2)
+
     # Set seed for this data-set
     Random.seed!(j)
-
+    
     # Loop through all simulation settings
     for set in settings
         
