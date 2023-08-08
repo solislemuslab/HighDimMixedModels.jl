@@ -1,8 +1,9 @@
 library(glue)
 library(penalized)
 library(emulator)
-source("R/lmmSCAD/helpers.R")
-lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], SCADa=3.7, maxIter=100, tol=10^(-2)){
+source("R/lmmSCAD_og/helpers.R")
+lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], SCADa=3.7)
+{
   # x, y, z = Data matrices as per teh notation in our manuscript
   # grp = group indicator (factor)
   # weights = weight vector
@@ -14,9 +15,9 @@ lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], 
 
   
   ##################### ----- controls ... --------
-  trace=1; maxArmijo=20; number=5; a_init=1; delta=0.1; rho=0.001; gamma=0; 
+  tol=10^(-2); trace=1; maxIter=100; maxArmijo=20; number=5; a_init=1; delta=0.1; rho=0.001; gamma=0; 
   lower=10^(-6); upper=10^8;
-  #seed = 532
+  #seed=532;
   VarInt=c(0,1); CovInt=c(-5,5); thres=10^(-4);
   ranInd=1:dim(z)[[2]];
 
@@ -97,11 +98,12 @@ lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], 
   mat0 <- matrix(0,ncol=p,nrow=N)
   
   stopped <- FALSE
+  doAll <- FALSE
   converged <- 0
-  counterIn <- 1
+  counterIn <- 0
   counter <- 0       # counts the number of outer iterations
   
-  while ((maxIter > counter) &  (counterIn == 1))
+  while ((maxIter > counter) &  (convPar > tol | convFct > tol | convCov > tol | !doAll ))
   {
     # print(counter)
     if (maxIter==counter+1) {
@@ -117,7 +119,7 @@ lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], 
     # --- optimization w.r.t the fixed effects vector beta ---
     # --------------------------------------------------------
     
-    activeSet <- 1:length(betaIter)
+    activeSet <- which(betaIter!=0)
 
     # calculate the hessian matrices for j in the activeSet
     HessIter <- HessIterTrunc <- HessianMatrix(xGroup=xGrp,LGroup=lambdaInvGrp,activeSet=activeSet,
@@ -173,10 +175,11 @@ lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], 
     rIter <- y-x[,activeset,drop=FALSE]%*%betaIter[activeset,drop=FALSE]
     resGrp <- split(rIter,grp)
     
-    ll4 <- OSCAD(betaIter[-nonpen],lambda/weights[-nonpen],SCADa) ##depends on penalty
+    ll4 <- OSCAD(betaIter[-nonpen],lambda/weights[-nonpen],SCADa)                 ##depends on penalty
     loglik <- MLloglik(xGroup=xGrp,yGroup=yGrp,LGroup=lambdaInvGrp,b=betaIter,ntot=ntot,N=N,activeSet=which(betaIter!=0))
     print(glue("Cost after updating fixed effects is {ll4 - loglik}"))
-    
+
+
 # optimization for theta with nlminb (starting value provided)
     if (pdMat=="pdIdent"){
       true.pars=parsIter
@@ -215,6 +218,7 @@ lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], 
     sIter <- optRes$par
     fctIter <- ll1 + optRes$objective + ll4
     print(glue("Cost after iteration {counter} is {fctIter}"))
+    
 
     lambdaInvGrp <- mapply(LambdaInv,Z=zGrp,MoreArgs=list(Psi=PsiIter,sigma=sIter))
     covIter <- c(sIter,parsIter)
@@ -223,6 +227,7 @@ lmmSCAD <- function(x,y,z=x,grp,weights=NULL,lambda,pdMat,nonpen=1:dim(z)[[2]], 
     convPar <- sqrt(crossprod(betaIter-betaIterOld))/(1+sqrt(crossprod(betaIter)))
     convFct <- abs((fctIterOld-fctIter)/(1+abs(fctIter)))
     convCov <- sqrt(crossprod(covIter-covIterOld))/(1+sqrt(crossprod(covIter)))
+
     if ((convPar <= tol) & (convFct <= tol) & (convCov <= tol)) counterIn <- 0
     
   }
@@ -291,17 +296,19 @@ corPsi <- cov2cor(Psi)
 }
 
 set.seed=532;
-data <- read.csv("R/lmmSCAD/random3_covdiag/data100.csv")
+data <- read.csv("R/lmmSCAD/random3_covdiag/data47.csv")
 grp = data$group
 grp = factor(grp)
 x = as.matrix(data[,!(colnames(data) %in% c("group","y"))])
 z = as.matrix(data[, 2:4])
-lambda = 45
+lambda = 15
 y = data[,ncol(data)]
-results = lmmSCAD(x, y, z, grp, lambda = lambda, pdMat = "pdDiag", tol = 10^-3, maxIter = 100)
+results = lmmSCAD(x, y, z, grp, lambda = lambda, pdMat = "pdDiag")
 results$coefficients[1:10]
 sum(results$coefficients != 0)
 results$pars
 results$coefInit$betaStart[1:10]
 sum(results$coefInit$betaStart != 0)
 # βnz2 = [1,2,4,3,3,-1,5,-3,2,2]
+
+

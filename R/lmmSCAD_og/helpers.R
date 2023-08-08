@@ -1,5 +1,5 @@
 
-##################### -- generate an identity matrix of dimension nrow(z)
+##################### -- generate an Identity matrix of order as nrow(z)
 
 ZIdentity <- function(Z)
 {
@@ -71,14 +71,14 @@ ArmijoRuleSCAD <- function(xGroup,yGroup,LGroup,b,j,cut,HkOldJ,HkJ,JinNonpen,lam
     {   ##depends on penalty
       ck<- (bJ*HkJ)-grad
       lambdaw<-lambda/weights[j]
-      if (ck<=lambdaw*(HkJ+1))
+      if (ck<=lambdaw*(Hkj+1))
         dk<- (-lambdaw-grad)/HkJ
       else if (ck>lambdaw*SCADa*HkJ)
         dk<- -grad/HkJ
       else
-        dk <- (-grad*(SCADa-1)-(SCADa*lambdaw - bJ))/(HkJ*(SCADa-1)-1)
+        dk <- (-grad*(SCADa-1)-(SCADa*lambdaw - bJ))/(Hkj*(SCADa-1)-1)
       }
-
+  
   if (dk!=0)
   { 
     # calculate delta_k
@@ -89,14 +89,14 @@ ArmijoRuleSCAD <- function(xGroup,yGroup,LGroup,b,j,cut,HkOldJ,HkJ,JinNonpen,lam
       }
     
     
-    fctOld <- ObjFunctionSCAD(xGroup=xGroup,yGroup=yGroup,LGroup=LGroup,b=b,weights=weights,
-                          lambda=lambda, SCADa, nonpen=nonpen,ll1=ll1)
+    fctOld <- ObjFunction(xGroup=xGroup,yGroup=yGroup,LGroup=LGroup,b=b,weights=weights,
+                          lambda=lambda,nonpen=nonpen,ll1=ll1)
     for (l in 0:control$max.armijo)
     { 
       b.new[j] <- bJ + control$a_init*control$delta^l*dk
       
-      fctNew <- ObjFunctionSCAD(xGroup=xGroup,yGroup=yGroup,LGroup=LGroup,b=b.new,weights=weights,
-                            lambda=lambda, SCADa, nonpen=nonpen,ll1=ll1)
+      fctNew <- ObjFunction(xGroup=xGroup,yGroup=yGroup,LGroup=LGroup,b=b.new,weights=weights,
+                            lambda=lambda,nonpen=nonpen,ll1=ll1)
       addDelta <- control$a_init*control$delta^l*control$rho*deltak
       if (fctNew <= fctOld + addDelta)
       {
@@ -170,6 +170,9 @@ MLloglik <- function(xGroup,yGroup,LGroup,b,ntot,N,activeSet)
   return(loglik=ll)    
 }
 
+
+
+
 #################### -- Starting value of the covariates as in Schelldorfer et al. (2011) paper ----------
 
 
@@ -232,17 +235,14 @@ OSCAD <- function(beta, lambda, a)
   {
   b=a*lambda[i]/(a-1)
   c=lambda[i]^2/(2-2*a)
-  if (u[i]<lambda[i]) {
+  if (u[i]<lambda[i])
     f[i]=lambda[i]*u[i]
-  }   
   else 
     {
-    if (u[i]<a*lambda[i]) {
+    if (u[i]<a*lambda[i])
       f[i]=alpha*u[i]^2+b*u[i]+c
-    }   
-    else {
+    else 
       f[i]=(1+a)*lambda[i]^2/2
-    }   
     }
   }
   return(sum(f))
