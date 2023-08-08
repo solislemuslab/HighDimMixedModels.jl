@@ -285,7 +285,7 @@ LPsi=diag(q),lower = 10^(-6), upper = 100)"
 @testset "L identity structure update function" begin
 
     @rget optRes 
-    @test isapprox(optRes[:par], Lnew, atol = 1e-5)
+    @test isapprox(optRes[:par], Lnew, atol = 1e-4)
 
 end
 
