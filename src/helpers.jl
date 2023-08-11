@@ -5,17 +5,18 @@ using Optim #Needed for univariate optimization in coordinated gradient descent 
 using InvertedIndices #Allows negative indexing, like in R
 
 """
-Returns covariance matrices of the responses, by group
+Updates precision matrices of the responses, by group
 
 ARGUMENTS
+- invVgrp :: Container for precision matrices of the responses, by group
+- Zgrp :: Container of random effects design matrices, by group
 - L :: Parameters for random effect covariance matrix (can be scalar, vector, or lower triangular matrix)
-- Zgrp :: Vector of random effects design matrix for each group
 - σ² :: Variance of error
 
 OUTPUT
-- Vgrp :: List of length the number of groups, each of whose elements is the covariance matrix of the responses within a group
+- invVgrp :: List of length the number of groups, each of whose elements is the covariance matrix of the responses within a group
 """
-function var_y(L, Zgrp, σ²)
+function invV!(invVgrp, Zgrp, L, σ²)
     
     m = size(Zgrp[1])[2]
     
@@ -27,12 +28,14 @@ function var_y(L, Zgrp, σ²)
         Ψ = L*L' 
     end
     
-    Vgrp = Matrix[]
-    for Zᵢ in Zgrp
+    for (i, Zᵢ) in enumerate(Zgrp)
         nᵢ = size(Zᵢ)[1]
-        push!(Vgrp, Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ))  
+        Vᵢ = Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ)
+        # Need to make symmetric: because of floating point arithmetic, 
+        # cholesky will fail to recognize the matrix as symmetric
+        invVgrp[i] = inv(cholesky(Symmetric(Vᵢ)))
     end
-    return Vgrp 
+
 end
 
 """
@@ -115,9 +118,8 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
     # It can be shown that if we know η = sqrt(Ψ/σ²) and β, the MLE for σ² is 
     # given by the below function
 
-    function σ²hat(XGgrp, ygrp, Zgrp, β, η) 
-        Ṽgrp = var_y(η, Zgrp, 1)
-        invṼgrp = [inv(Ṽ) for Ṽ in Ṽgrp]
+    function σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp) 
+        invV!(invṼgrp, Zgrp, η, 1)
         residgrp = [y-XG*β for (y, XG) in zip(ygrp, XGgrp)]
         quadgrp = [resid'*invṼ*resid for (resid, invṼ) in zip(residgrp, invṼgrp)]
         σ² = sum(quadgrp)/sum(length.(ygrp))
@@ -125,13 +127,15 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
     end
     
     # We can now profile the likelihood and optimize with respect to η 
-
-    function profile(η)
-        σ² = σ²hat(XGgrp, ygrp, Zgrp, β, η)
+    function like(η, invṼgrp, invVgrp)
+        σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp)
         L = η*sqrt(σ²)
-        invVgrp = [inv(V) for V in var_y(L, Zgrp, σ²)]
+        invV!(invVgrp, Zgrp, L, σ²)
         get_negll(invVgrp, ygrp, XGgrp, β) 
     end
+
+    g = length(Zgrp)
+    profile(η) = like(η, Vector{Matrix}(undef, g), Vector{Matrix}(undef, g))
 
     result = optimize(profile, 1.0e-6, 1.0e6) #will need to fix
     
@@ -141,7 +145,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
         error("Convergence for η not reached")
     end
 
-    σ² = σ²hat(XGgrp, ygrp, Zgrp, β, η)
+    σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, Vector{Matrix}(undef, g))
     L = η*sqrt(σ²)
     return L, σ²
 
@@ -151,18 +155,14 @@ end
 """
 Calculates active_set entries of the diagonal of Hessian matrix for fixed effect parameters 
 """
-function hessian_diag(XGgrp, invVgrp, active_set)
-    
-    hess = zeros(size(XGgrp[1], 2))
-    mat_act = zeros(length(invVgrp), length(active_set))
-    XGgrp_act = [XGi[:,active_set] for XGi in XGgrp]
+function hessian_diag!(XGgrp, invVgrp, active_set, hess, mat_act)
 
     for j in eachindex(invVgrp)
-        mat_act[j,:] = diag(XGgrp_act[j]'*invVgrp[j]*XGgrp_act[j])
+        mat_act[j,:] = diag(XGgrp[j][:,active_set]'*invVgrp[j]*XGgrp[j][:,active_set])
     end
 
     hess[active_set] = sum(mat_act, dims=1)
-    return hess 
+
 end
 
 
@@ -199,6 +199,7 @@ function scad_solution(cut, hess, λ, a)
         β = ((a-1)*cut - sign(cut)*a*λ)/(hess*(a-2))
     end
 
+    return β
 end
 
 """
@@ -225,7 +226,7 @@ Armijo Rule
 """
 function armijo!(XGgrp, ygrp, invVgrp, β, j, q, cut, 
     hessj_untrunc::Real, hessj::Real, penalty, 
-    λ, a, fct_old, converged, control)
+    λ, a, fct_old, arm_con, control)
     
     βnew = copy(β)
    
@@ -262,12 +263,12 @@ function armijo!(XGgrp, ygrp, invVgrp, β, j, q, cut,
             if fct_new <= fct + addΔ
                 β[j] = βnew[j]
                 fct = fct_new
-                return (fct = fct, converged = converged)
+                return (fct = fct, arm_con = arm_con)
             end
             if l == control.max_armijo
-                control.trace > 1 && println("Armijo for coordinate $(j) of β not successful") 
-                converged = converged+2 
-                return (fct = fct, converged = converged)
+                control.trace > 1 && @warn "Armijo for coordinate $(j) of β not successful" 
+                arm_con += 1 
+                return (fct = fct, arm_con = arm_con)
             end
         end
     end
@@ -280,8 +281,13 @@ Update of L for identity covariance structure
 function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
 
     L_lb, L_ub = var_int
+    g = length(Zgrp)
     
-    profile(L) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
+    function profile(L) 
+        invVgrp = Vector{Matrix}(undef, g)
+        invV!(invVgrp, Zgrp, L, σ²)
+        get_negll(invVgrp, ygrp, XGgrp, β)
+    end
     result = optimize(profile, L_lb, L_ub, show_trace = false) 
     
     Optim.converged(result) || error("Minimization with respect to L failed to converge")
@@ -307,10 +313,13 @@ ARGUMENTS
 """
 function L_diag_update!(L, XGgrp, ygrp, Zgrp, β, σ², s, var_int, thres)
     
+    g = length(Zgrp)
     #Function to optimize
     function profile(x)
         L[s] = x 
-        get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β) 
+        invVgrp = Vector{Matrix}(undef, g)
+        invV!(invVgrp, Zgrp, L, σ²)
+        get_negll(invVgrp, ygrp, XGgrp, β) 
     end
 
     x_lb, x_ub = var_int
@@ -340,11 +349,13 @@ function L_sym_update!(L, XGgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int,
     
     #Are we minimizing a covariance parameter or a variance parameters
     int = coords[1]==coords[2] ? var_int : cov_int 
-    
+    g = length(Zgrp)
     #Function to optimize
     function profile(x)
         L[coords[1], coords[2]] = x 
-        get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β) 
+        invVgrp = Vector{Matrix}(undef, g)
+        invV!(invVgrp, Zgrp, L, σ²)
+        get_negll(invVgrp, ygrp, XGgrp, β)
     end
 
     x_lb, x_ub = int
@@ -369,7 +380,11 @@ Update of σ²
 function σ²update(XGgrp, ygrp, Zgrp, β, L, var_int)
    
     #Decision variable will be σ² rather than σ
-    profile(σ²) = get_negll(inv.(var_y(L, Zgrp, σ²)), ygrp, XGgrp, β)
+    function profile(σ²) 
+        invVgrp = Vector{Matrix}(undef, length(Zgrp))
+        invV!(invVgrp, Zgrp, L, σ²)
+        get_negll(invVgrp, ygrp, XGgrp, β)
+    end
     
     x_lb, x_ub = var_int
     result = optimize(profile, x_lb^2, x_ub^2) #Square bounds because decision variable is σ²

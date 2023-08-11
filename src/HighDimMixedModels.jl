@@ -11,7 +11,7 @@ Algorithm Hyper-parameters
 
 - tol :: Convergence tolerance
 - seed :: Random seed for cross validation for estimating initial fixed effect parameters using Lasso
-- trace :: Integer. 1 prints no output, 2 prints warnings, and 3 prints the objective function values during the algorithm and warnings
+- trace :: Integer. 1 prints no output, 2 prints issues, and 3 prints the objective function values during the algorithm and issues
 - max_iter :: Integer. Maximum number of iterations
 - max_armijo :: Integer. Maximum number of steps in Armijo rule algorithm. If the maximum is reached, algorithm doesn't update current coordinate and proceeds to the next coordinate
 - act_num :: Integer between 1 and 5. We will only update all fixed effect parameters every act_num iterations. Otherwise, we update only the parameters in thea current active set.
@@ -59,12 +59,12 @@ Positional:
 NOTE: Z is not expected to be given in block diagonal form. It should be a vertical stack of subject design matrices Z₁, Z₂, ...
 
 Keyword:
-- standardize :: boolean (default false), whether to standardize design matrices before performing algorithm. 
+- standardize :: boolean (default true), whether to standardize design matrices before performing algorithm. 
 - penalty :: One of "scad" (default) or "lasso"
 - λ :: Positive regularizing penalty (default is 10.0)
 - scada :: Extra tuning parameter for the SCAD penalty (default is 3.7, ignored if penalty is "lasso"
 - wts :: Vector of length number of penalized coefficients. Strength of penalty on covariate j is λ/wⱼ (Default is vector of 1's)
-- init_coef :: Tuple of form (β, L, σ²) giving initial values for parameters. If unspecified, then inital values for parameters are 
+- init_coef :: Named tuple of form (β, L, σ²) giving initial values for parameters. If unspecified, then inital values for parameters are 
 calculated as follows: first, cross-validated LASSO that ignores grouping structure is performed to obtain initial estimates of the 
 fixed effect parameters. Then, the random effect parameters are initialized as MLEs assuming the LASSO estimates are true fixed effect parameters.
 - ψstr :: One of "diag" (default), "ident", or "sym", specifying covariance structure of random effects 
@@ -74,9 +74,8 @@ OUTPUT
 - Fitted model
 """
 function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, grp::Vector{String}, Z::Matrix{Float64}=X;
-    standardize=false, penalty::String="scad", λ::Float64=10.0, scada::Float64=3.7, wts::Vector{Float64}=fill(1, size(G, 2)),
-    init_coef::Union{Vector,Nothing}=nothing, ψstr::String="diag", control=Control())
-
+    standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, wts::Vector{Float64}=fill(1, size(G, 2)),
+    init_coef::Union{Vector,Nothing}=nothing, ψstr::String="diag", control::Control=Control())
 
     ##Get dimensions
     N = length(y) # Total number of observations
@@ -106,18 +105,24 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     #Penalty related checks
     @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
     @assert λ > 0 "λ is regularization parameter, must be positive"
+    @assert scada > 0 "scada is regularization parameter, must be positive"
     @assert all(wts .> 0) "Weights must be positive"
+    @assert length(wts) == p "Number of weights must equal number of penalized covariates"
+    # Create the vector of penalty parameters of length q + p, i.e. one for each fixed effect
     λwtd = [zeros(q); λ ./ wts]
     @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
     @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
 
-    control::HighDimMixedModels.Control #Checks control hyper parameters
-
     #Check that initial coefficients, if provided, make sense
     if init_coef !== nothing
         @assert length(init_coef) == 3 "init_coef must be of length 3"
+        @assert init_coef.β isa Vector{Real} "init_coef.β must be a vector of reals"
+        @assert length(init_coef.β) == q + p "init_coef.β must be of length q + p"
+        @assert init_coef.L isa Real "init_coef.L must be a real number"
+        @assert init_coef.L > 0 "init_coef.L must be positive"
+        @assert init_coef.σ² isa Real "init_coef.σ² must be a real number"
+        @assert init_coef.σ² > 0 "init_coef.σ² must be positive"
     end
-
 
     # --- Introductory allocations ----------------
     # ---------------------------------------------
@@ -153,7 +158,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     # ---------------------------------------------
     if init_coef === nothing
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = fit(LassoModel, XG[:, Not(1)], y; select=MinCVmse(Kfold(N, 10)))
+        lassopath = fit(LassoModel, XG[:, Not(1)], y;
+            penalty_factor=[zeros(q - 1); 1 ./ wts], select=MinCVmse(Kfold(N, 10)))
         βstart = coef(lassopath) #Fixed effects
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)
@@ -175,8 +181,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
 
     # --- Calculate cost for the starting values ---
     # ---------------------------------------------
-    Vgrp = var_y(Lstart, Zgrp, σ²start)
-    invVgrp = [inv(V) for V in Vgrp]
+    invVgrp = Vector{Matrix}(undef, g)
+    invV!(invVgrp, Zgrp, Lstart, σ²start)
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
@@ -189,32 +195,31 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     βiter = copy(βstart)
     Liter = copy(Lstart)
     σ²iter = σ²start
-    cov_iter = vcat(ndims(Liter) == 2 ? vec(Liter) : Liter, sqrt(σ²iter))
+    Lvec_iter = ndims(Liter) == 2 ? vec(Liter) : Liter #L as vector if ψstr == "sym"
+    varp_iter = vcat(Lvec_iter, sqrt(σ²iter)) #Vector of covariance parameters
     neglike_iter = neglike_start
     fct_iter = fct_start
+    hess = zeros(q+p) #Container for future calculations
+    mat = zeros(g, q+p) #Container for future calculation
 
     convβ = norm(βiter)^2
-    conv_cov = norm(cov_iter)^2
+    conv_varp = norm(varp_iter)^2
     conv_fct = fct_iter
 
+    stopped = false #Make true if we start interpolating the data
     do_all = false
-    converged = 0 #Make 1 if we fail to converge
+    arm_con = 0 #Goes up by 1 every time an Armijo step fails to converge
     counter_in = 0
     counter = 0
+    num_arm = 0
 
-    while (max(convβ, conv_cov, conv_fct) > control.tol || !do_all) && (counter < control.max_iter)
+    while (max(convβ, conv_varp, conv_fct) > control.tol || !do_all) && (counter < control.max_iter)
 
         counter += 1
-        control.trace > 2 && println("Cost before iteration $counter: $fct_iter")
-
-        if counter == control.max_iter
-            println("$counter iterations reached without convergence")
-            converged = 1
-        end
 
         #Keep copy of variables that are being updated for convergence checking
         βold = copy(βiter)
-        cov_old = copy(cov_iter)
+        varp_old = copy(varp_iter)
         fct_old = fct_iter
 
         #---Optimization with respect to fixed effect parameters ----------------------------
@@ -224,24 +229,33 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         #See  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
         active_set = findall(βiter .!= 0)
 
+        # If the active set is larger than the total sample size and we're a few iterations in,
+        # that means we're converging towards a solution that interpolates the data, which is bad
+        if length(active_set) > N && λ > 0 && counter > 2
+            stopped = true
+            break
+        end
+          
         if counter_in == 0 || counter_in > control.act_num
             active_set = 1:(p+q)
             counter_in = 1
             do_all = true
         else
+            do_all = false
             counter_in += 1
         end
 
-        hess = hessian_diag(XGgrp, invVgrp, active_set)
+        #Calculate the Hessian for the coordinates of the active set
+        hessian_diag!(XGgrp, invVgrp, active_set, hess, mat[:,active_set])
         hess_untrunc = copy(hess)
         hess[active_set] = min.(max.(hess[active_set], control.lower), control.upper)
-
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
             cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
+                num_narm += 1
                 if j in 1:q
                     βiter[j] = cut / hess[j]
                 elseif penalty == "lasso"
@@ -250,15 +264,16 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
                     βiter[j] = scad_solution(cut, hess[j], λwtd[j], scada)
                 end
             else #Must actually perform Armijo line search 
-                fct_iter, converged = armijo!(XGgrp, ygrp, invVgrp, βiter, j, q, cut, hess_untrunc[j],
-                    hess[j], penalty, λwtd, scada, fct_iter, converged, control)
+                num_arm += 1
+                fct_iter, arm_con = armijo!(XGgrp, ygrp, invVgrp, βiter, j, q, cut, hess_untrunc[j],
+                    hess[j], penalty, λwtd, scada, fct_iter, arm_con, control)
             end
         end
-        
-        #Calculate new objective function
+
+        #Calculate new objective function and print if trace > 2
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
-        println("After updating fixed effects, cost is $fct_iter")
+        control.trace > 2 && println("After updating fixed effects, cost is $fct_iter")
 
         #---Optimization with respect to random effect parameters ----------------------------
         #------------------------------------------------------------------------------------
@@ -288,31 +303,43 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
         σ²iter = σ²update(XGgrp, ygrp, Zgrp, βiter, Liter, control.var_int)
 
         #Vector of variance/covariance parameters
-        cov_iter = vcat(ndims(Liter) == 2 ? vec(Liter) : Liter, sqrt(σ²iter))
+        Lvec_iter = ndims(Liter) == 2 ? vec(Liter) : Liter
+        varp_iter = vcat(Lvec_iter, sqrt(σ²iter))
 
         #Calculate new inverse variances 
-        Vgrp = var_y(Liter, Zgrp, σ²iter)
-        invVgrp = [inv(V) for V in Vgrp]
+        invV!(invVgrp, Zgrp, Liter, σ²iter)
 
         #Calculate new objective function
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
 
-
         #Inserted to prevent covergence issues
         if neglike_iter < 0
-            error("log likelihood is positive, model is interpolating data. Choose larger λ.")
+            stopped = true
+            break
         end
 
         #Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
-        conv_cov = norm(cov_iter - cov_old) / (1 + norm(cov_iter))
+        conv_varp = norm(varp_iter - varp_old) / (1 + norm(varp_iter))
         conv_fct = abs(fct_iter - fct_old) / (1 + abs(fct_iter))
 
-        if max(convβ, conv_cov, conv_fct) <= control.tol
+        if max(convβ, conv_varp, conv_fct) <= control.tol
             counter_in = 0 #Update all entries next iteration and if parameters still doesn't change, then call it quits
         end
 
+    end
+    
+    if stopped == true
+        error("log likelihood is positive, model is interpolating data. Choose larger λ.")
+    end
+
+    if arm_con > 0
+        @warn "Armijo rule failed $arm_con times"
+    end
+
+    if counter == control.max_iter
+        @warn "$counter iterations reached without convergence"
     end
 
     #Get coefficients and design matrices on the original scale 
@@ -372,8 +399,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts,
         init_coef=(βstart=βstart, Lstart=Lstart, σ²start=σ²start), init_log_like=-neglike_start, init_objective=fct_start,
         init_nz=nz_start, penalty=penalty, λ=λ, scada=scada, σ²=σ²iter, L=Lmat, fixef=βiter, ranef=b, fitted=fitted,
-        resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance,
-        aic=aic, bic=bic, iterations=counter, ψstr=ψstr, ψ=Lmat * Lmat', control=control)
+        resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance, arm_con=arm_con,
+        num_arm = num_arm, aic=aic, bic=bic, iterations=counter, ψstr=ψstr, ψ=Lmat * Lmat', control=control)
 
     return out
 

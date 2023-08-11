@@ -53,7 +53,7 @@ R"ll1 <- 1/2*N*log(2*pi)"
 
 # True parameters 
 βun = [20, 2, -3]
-βpen = [4,3,0,0,0]
+βpen = [4, -3, 0, 1, 1]
 β = [βun; βpen]
 L = LowerTriangular([15 0 0; 0 10 0; 0 0 5])
 σ² = 100
@@ -68,10 +68,10 @@ R"yfixed = $yfixed"
 R"y = $y"
 
 #Create penalty hyperparameters
-λ = 10
+λ = .01
 a = 3.7
-wts = fill(1, q)
-λwtd =[zeros(p); λ./wts]
+wts = fill(1, p)
+λwtd =[zeros(q); λ./wts]
 R"λ = $λ"
 R"λwtd = $λwtd"
 R"a = $a"
@@ -79,7 +79,7 @@ R"wts = $wts"
 
 
 # Estimate fixed effect parameters with LASSO that doesn't take into account random effect structure (with several different settings)
-pf = [zeros(p); ones(q)]
+pf = [zeros(q-1); ones(p)]
 Random.seed!(54)
 lassomod = coef(fit(LassoModel, [X G][:,Not(1)], y; select = MinCVmse(Kfold(size(X)[1], 10)), penalty_factor=pf))
 lassomod_nopen = coef(fit(LassoModel, [X G][:,Not(1)], y; select = MinCVmse(Kfold(size(X)[1], 10))))
@@ -87,7 +87,6 @@ lassomod_yfixed = coef(fit(LassoModel, [X G][:,Not(1)], yfixed; select = MinCVms
 lassomod_yfixed_nopen = coef(fit(LassoModel, [X G][:,Not(1)], yfixed; select = MinCVmse(Kfold(size(X)[1], 10))))
 
 R"pf = $pf"
-R"pf = pf[-1]"
 R"cvfit <- cv.glmnet(XG[,-1], y, penalty.factor = pf)" # Defaults to 10-fold cv
 R"lassomod = coef(cvfit, s = \"lambda.min\")" 
 R"cvfit_nopen <- cv.glmnet(XG[,-1], y)" # Defaults to 10-fold cv
@@ -109,8 +108,8 @@ for group in unique(grp)
     XGᵢ, Zᵢ, yᵢ = XG[grp .== group,:], Z[grp .== group,:], y[grp .== group]
     push!(XGgrp, XGᵢ); push!(Zgrp, Zᵢ); push!(ygrp, yᵢ)
 end
-Vgrp = hdmm.var_y(L, Zgrp, σ²)
-invVgrp = [inv(V) for V in Vgrp]
+invVgrp = Vector{Matrix}(undef, g)
+hdmm.invV!(invVgrp, Zgrp, L, σ²)
 R"XGgrp = $XGgrp"
 R"ygrp = $ygrp"
 R"Zgrp = $Zgrp"
@@ -169,11 +168,9 @@ end
     R"start5 = splmm:::covStartingValues(XGgrp, ygrp, Zgrp, IdGroup, lassomod_yfixed_nopen, N, g)"
     R"splmm_pars = lapply(list(start1, start2, start3, start4, start5), function(start) c(start$tau, start$sigma^2))"
     @rget splmm_pars
-
     @test all(isapprox.(my_pars, splmm_pars, atol = 1e-2))
 
 end
-
 
 ### Test fixed effect parameter update functions
 
@@ -182,8 +179,7 @@ end
 cov_iter = hdmm.cov_start(XGgrp, ygrp, Zgrp, βiter)
 Liter = cov_iter[1] #Assume identity structure for now
 σ²iter = cov_iter[2]
-Vgrp = hdmm.var_y(Liter, Zgrp, σ²iter)
-invVgrp = [inv(V) for V in Vgrp]
+hdmm.invV!(invVgrp, Zgrp, L, σ²)
 R"βiter_R = $βiter"
 R"Liter_R = $Liter"
 R"σ2iter_R = $σ²iter"
@@ -200,7 +196,7 @@ active_set = findall(βiter .!= 0)
 R"active_set = $active_set"
 
 
-hess = hdmm.hessian_diag(XGgrp, invVgrp, active_set)
+hdmm.hessian_diag!(XGgrp, invVgrp, active_set, hess, mat[:, active_set])
 hess_untrunc = copy(hess)
 hess[active_set] = min.(max.(hess[active_set], control.lower), control.upper)
 
@@ -227,7 +223,7 @@ end
 
 
 ll_old = hdmm.get_negll(invVgrp, ygrp, XGgrp, βiter)
-fct_old = hdmm.get_cost(ll_old, βiter[(p+1):end], "scad", λwtd[(p+1):end])
+fct_old = hdmm.get_cost(ll_old, βiter[(q+1):end], "scad", λwtd[(q+1):end])
 
 R"cut = rep(0, p+q)"
 println("Current value of  βiter is $(βiter)")
@@ -239,16 +235,20 @@ for j in active_set
     j, q, cut, hess_untrunc[j], hess[j], 
     "scad", λwtd, a, fct_old, 0, control)
     println("The new value of β is $(βiter) with function value $(arm.fct)")
-    global fct_old = arm.fct    
+    global fct_old = arm.fct   
+    if arm.arm_con == 1
+        @warn "Armijo did not converge"
+    end
 end
 
+#splmm's armijo doesn't work so we use lmmSCAD's to check
 R"cat(\"Current value of βiter is \", βiter_R, \"\n\")"
 R" 
 for (j in active_set) {
-    JinNonpen = j %in% 1:p
+    JinNonpen = j %in% 1:q
     arm = ArmijoRuleSCAD(XGgrp,ygrp,invVgrp, βiter_R, j=j, cut[j], hess_untrunc_R[j], hess_R[j], 
     JinNonpen = JinNonpen, λ, a, weights = rep(1,p+q), 
-    nonpen = 1:p , ll1, ll2, converged = 0, 
+    nonpen = 1:q , ll1, ll2, converged = 0, 
     control=list(max.armijo=maxArmijo,a_init=a_init,delta=delta,rho=rho,gamma=gamma))
     print(arm)
     βiter_R = arm$b
@@ -265,7 +265,7 @@ end
 
 R"βiter = βiter_R"
 
-#How to test Lasso?
+#We can't test armijo rule for lasso unfortunately
 
 
 ### Test covariance parameter update functions
