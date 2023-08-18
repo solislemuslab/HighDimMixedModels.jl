@@ -6,19 +6,22 @@ using DelimitedFiles
 using Serialization
 
 # r = ZipFile.Reader("data/GWAS/random3_covsym.zip")
-λs = Float64.(1000:10:1100)
-res_matrix = Array{Any}(undef, 2, length(λs))
+λs = Float64.(30:1:40)
+res_matrix = Array{Any}(undef, 100, length(λs)+1)
 data_dir = "data/OTU/random1_covid"
 file_names = readdir(data_dir)
-filter!(x -> occursin("erdos_renyi", x), file_names)
+filter!(x -> occursin("rs_data_LinShi", x), file_names)
 println(length(file_names))
 
 # for (i, f) in enumerate(r.files[2:end]) #First file is just the folder
-for (i, f) in enumerate(file_names[60:61])
+for (i, f) in enumerate(file_names)
     
     println("Filename: $f")
     println("File number $i")
-    
+    #First column of results matrix is the file name
+    res_matrix[i, 1] = Base.basename(f)
+
+
     df = CSV.read("$data_dir/$f", DataFrame)
     X_names = [col for col in names(df) if startswith(col, "X")]
     G_names = [col for col in names(df) if startswith(col, "G")]
@@ -27,20 +30,20 @@ for (i, f) in enumerate(file_names[60:61])
     
     X = Matrix{Float64}(df[:,X_names])
     G = Matrix{Float64}(df[:,G_names])
-    G = G[:,1:end-1] #Remove the last column for microbiome data because of sum to 1 constraint
     y = df[:,end]
     control = Control()
     control.trace = 3
     #control.tol = 1e-4
     #control.cov_int = (-5, 5)
-    control.var_int = (0, 1000)
+    #control.var_int = (0, 1000)
 
     for (j, λ) in enumerate(λs)
 
         println("λ is $λ")
         try 
-            est = lmmlasso(X, G, y, grp; 
-                standardize = false, penalty = "scad", 
+            Z = X[:,1:(end-1)]
+            est = lmmlasso(X, G, y, grp, Z; 
+                standardize = true, penalty = "scad", 
                 λ=λ, scada = 3.7, wts = fill(1.0, size(G)[2]), 
                 init_coef = nothing, ψstr="ident", control=control)
         
@@ -54,11 +57,11 @@ for (i, f) in enumerate(file_names[60:61])
 
             #Insert the resulting fit to the results matrix but remove the
             #field that has all the data in it for memory efficiency 
-            res_matrix[i,j] = Base.structdiff(est, (data = 1,))
+            res_matrix[i,j+1] = Base.structdiff(est, (data = 1,weights=1, fitted=1))
         
         catch e
-            println("An error occurred in file $(f.name), λ = $λ: $e")
-            res_matrix[i,j] = "error"
+            println("An error occurred in file $(f), λ = $λ: $e")
+            res_matrix[i,j+1] = "error"
         end
 
 
@@ -66,7 +69,7 @@ for (i, f) in enumerate(file_names[60:61])
 
 end 
 
-#serialize("serial.txt", res_matrix)
+serialize("sim_results/OTU/LinShi/yesstand_rs_random1_covid_scad-results.txt", res_matrix)
 
 # f = r.files[2]
 # println("Filename: $(f.name)")

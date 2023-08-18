@@ -55,7 +55,7 @@ Positional:
 - G :: High dimensional design matrix for penalized fixed effects (assumed to not include column of ones) (REQUIRE)
 - y :: Vector of responses (REQUIRED)
 - grp :: Vector of strings of same length as y assigning each observation to a particular group (REQUIRED)
-- Z :: Design matrix for random effects (optional, default is all columns of X) (assumed to include column of ones) (REQUIRED)
+- Z :: Design matrix for random effects (default is all columns of X). Assumed to include column of ones
 NOTE: Z is not expected to be given in block diagonal form. It should be a vertical stack of subject design matrices Z₁, Z₂, ...
 
 Keyword:
@@ -255,7 +255,6 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
             cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
-                num_narm += 1
                 if j in 1:q
                     βiter[j] = cut / hess[j]
                 elseif penalty == "lasso"
