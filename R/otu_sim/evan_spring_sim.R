@@ -22,10 +22,16 @@ for (gtype in gtypes) {
     Cor_amgut   <- cov2cor(SpiecEasi::prec2cov(Prec_amgut)) # correlation matrix.
     
     # Generate synthetic data based on real amgut data and desired correlation struct
-    X_amgut <- synthData_from_ecdf(amgut1.filt, Sigma = Cor_amgut, n = 1000)
+    X_amgut <- synthData_from_ecdf(amgut1.filt, Sigma = Cor_amgut, n = 120)
     
+    # Imput pseudo counts to 0's and take log ratio, using last column as reference
+    min_nz = min(X_amgut[X_amgut != 0])
+    X_amgut[X_amgut == 0] <- min_nz/2
+    X_amgut <- log(X_amgut)
+    X_amgut <- X_amgut - X_amgut[,ncol(X_amgut)]
+
     datasets[[j]] = X_amgut
-    write.csv(X_amgut, paste0("data/OTU/data_", gtype, "_", j, ".csv"), row.names = FALSE)
+    write.csv(X_amgut, paste0("data/OTU/spring/data", gtype, "_", j, ".csv"), row.names = FALSE)
     print(j)
   }
   simulated_data[[i]] = datasets
