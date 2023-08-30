@@ -11,17 +11,33 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(patchwork)
+library(RColorBrewer)
 
 # set plotting theme -----------
 theme_set(theme_bw())
 theme_update(panel.grid = element_blank())
-getwd()
+
+my_colors = brewer.pal(n=3, "Accent")[1:2]
+scale_color_mine = function(...) {
+  ggplot2:::manual_scale("color", 
+               values = setNames(my_colors, c("lasso", "scad")),
+               ...)
+}
+
+q.labs = c("1 r.e.", "3 random effects", "5 r.e")
+names(q.labs) <- c("1", "3", "5")
+
+
 ```
+
+
 
 # Read in the data:
 ```{r}
 gene_results <- read_csv("../sim_results/best_results.csv")
 gwas_results <- read_csv("../sim_results/gwas/best_results.csv")
+otu_lr_results <- read_csv("../sim_results/OTU/LinShi/LinShi_lr_best_results.csv")
+otu_results <- read_csv("../sim_results/OTU/spring/best_results.csv")
 ```
 
 These data frames contain the fits with the best two BIC's (across all lambdas) for each dataset generated under each setting.
@@ -270,12 +286,7 @@ ggsave(
   units = "cm"
 )
 ```
-
-
 All estimates are biased downward.
-
-
-
 
 
 ## Plotting gene results for nz = 10
@@ -283,10 +294,6 @@ All estimates are biased downward.
 ### False positive rate
 
 ```{r}
-q.labs = c("1 r.e.", "3 random effects", "5 r.e")
-names(q.labs) <- c("1", "3", "5")
-
-
 fp_nz10 <- best_gene_results %>%
   filter(str_detect(setting, "nz10")) %>%
   mutate(
@@ -437,7 +444,7 @@ ggsave(
 ```
 
 ```{r}
-df_true <- data.frame(y_value = -1) 
+df_true <- data.frame(y_value = -3) 
 
 penal_nz10 <- best_gene_results %>%
   filter(str_detect(setting, "nz10")) %>%
@@ -451,7 +458,7 @@ penal_nz10 <- best_gene_results %>%
     ) 
   ) %>%
   mutate(`Correlated predictors` = if_else(correlation == "0.0", "No", "Yes")) %>%
-  ggplot(aes(y = beta_6, x = cov_str, col = penalty)) +
+  ggplot(aes(y = beta_8, x = cov_str, col = penalty)) +
   geom_boxplot(position = position_dodge(width = 0.9))  +
   geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
   labs(y = "Estimated Parameter", x = "Random effect covariance") +
@@ -518,7 +525,7 @@ var_comp_nz10 <- best_gene_results %>%
     scales = "free_x",
     space = "free"
   ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
-    scale_y_continuous(labels = scales::label_number(accuracy=.1), 
+    scale_y_continuous(labels = scales::label_number(accuracy=1), 
                        sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
     theme(#strip.text.x = element_text(size = 10 ),
       #strip.text.y = element_text(size = 10), 
@@ -539,6 +546,108 @@ ggsave(
 )
 ```
 
+#### Diagonal variance components
+```{r}
+df_true <- data.frame(parameter = rep(c(1, 2, 3), 2), 
+                      y_value = rep(c(3, 3, 2), 2), correlation = rep(c("No", "Yes"), each = 3))
+
+var_diag_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    correlation = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )) %>%
+  mutate(correlation = if_else(correlation == "0.0", "No", "Yes")) %>%
+  filter(q==3, cov_str == "diag") %>%
+  pivot_longer(cols = c(psi_1, psi_5, psi_9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty)) +
+  geom_segment(data = df_true, aes(x = parameter-.4, xend = parameter+.4,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  facet_grid(correlation ~ 1) +
+  scale_y_continuous(labels = scales::label_number(accuracy=1), 
+                       sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+    theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10),
+      strip.text.x = element_blank()) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+  
+var_diag_nz10
+
+ggsave(
+  "../plots/var_diag_nz10.pdf",
+  var_diag_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+
+
+#### Symmetric variance components
+```{r}
+Lsym <- matrix(c(sqrt(3), 0 ,0, 1, sqrt(3), 0, -sqrt(2), 1, sqrt(2)), nrow = 3, byrow = T)
+df_true <- data.frame(parameter = rep(1:9, 2), 
+                      y_value = rep(as.vector(Lsym %*% t(Lsym)), 2), correlation = rep(c("No", "Yes"), each = 9))
+
+var_sym_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    correlation = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    )) %>%
+  mutate(correlation = if_else(correlation == "0.0", "No", "Yes")) %>%
+  filter(q==3, cov_str == "sym") %>%
+  pivot_longer(cols = paste0("psi_", 1:9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty)) +
+  geom_segment(data = df_true, aes(x = parameter-.4, xend = parameter+.4,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  facet_grid(correlation ~ 1) +
+  scale_y_continuous(labels = scales::label_number(accuracy=1), 
+                       sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
+    theme(#strip.text.x = element_text(size = 10 ),
+      #strip.text.y = element_text(size = 10), 
+      legend.title = element_blank(),
+      text = element_text(size = 13), 
+      axis.text.y = element_text(size = 10),
+      strip.text.x = element_blank()) +
+  scale_color_brewer(type = "qual", 
+                     labels = c("Estimates with LASSO", 
+                                "Estimates with SCAD"))
+ var_sym_nz10
+
+ggsave(
+  "../plots/var_sym_nz10.pdf",
+  var_sym_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+
+ 
+```
+
+
 
 # GWAS Results
 
@@ -548,7 +657,7 @@ gwas_results %>%
   count(setting)
 ```
 
-### False negative rate
+### False positive rate
 
 ```{r}
 best_gwas_results <- gwas_results %>%
@@ -569,10 +678,9 @@ fp_gwas <- best_gwas_results %>%
   ggplot(aes(y = (n_nz - tp)/991, x = cov_str, col = penalty)) +
   geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
   labs(y = "False positive rate", x = "Random effect covariance") +
-  facet_grid(~ q, labeller = "label_both",
-    scales = "free", space = "free"
-  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
-  scale_y_continuous(labels = scales::percent) + #Not observing one outlier
+  facet_grid(. ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::percent, n.breaks = 6) + 
   theme(#strip.text.x = element_text(size = 10 ),
       #strip.text.y = element_text(size = 10), 
       legend.title = element_blank(),
@@ -617,16 +725,15 @@ tp_gwas <- best_gwas_results %>%
   ggplot(aes(y = tp, x = cov_str, col = penalty)) +
   geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
   labs(y = "Number of true positives", x = "Random effect covariance") +
-  facet_grid(~ q, labeller = "label_both",
-             scales = "free", space = "free"
-  ) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  facet_grid(. ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
   scale_y_continuous(labels = scales::label_number(accuracy = 1), limits = c(0,10)) +
   theme(#strip.text.x = element_text(size = 10 ),
       #strip.text.y = element_text(size = 10), 
       legend.title = element_blank(),
       text = element_text(size = 13), 
       axis.text.y = element_text(size = 10)) +
-  scale_color_brewer(type = "qual")
+  scale_color_mine()
 
 tp_gwas
 
@@ -680,9 +787,9 @@ ggsave(
   )
 ```
 
-How do we do estimating the penalized sixth component of beta?
+How do we do estimating the penalized eighth component of beta?
 ```{r}
-df_true <- data.frame(y_value = -1) 
+df_true <- data.frame(y_value = -3) 
 penal_gwas <- best_gwas_results %>%
   mutate(
     penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
@@ -692,7 +799,7 @@ penal_gwas <- best_gwas_results %>%
       levels = c("id", "diag", "sym")
     )
   ) %>%
-  ggplot(aes(y = beta_6, x = cov_str, col = penalty)) +
+  ggplot(aes(y = beta_8, x = cov_str, col = penalty)) +
   geom_boxplot(position = position_dodge(width = 0.9), width = .3) +
   geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
   labs(y = "Estimated Parameter", x = "Random effect covariance") +
@@ -769,6 +876,385 @@ ggsave(
   )
 
 ```
+
+
+#### Diagonal and symmetric variance components
+
+Not implemented yet. If we want to check these, we must divide by standard deviations because right now, Psi is on the scale of the standardized covariates.
+
+# OTU Results
+```{r}
+best_otu_results <- otu_results %>%
+  group_by(setting, data_id) %>%
+  arrange(bic, .by_group = TRUE) %>%
+  filter(row_number() == 1)  %>%
+  mutate(
+    penalty = str_extract(setting,  ".*_(.*)-", group = 1),
+    correlation = str_extract(data_id, "_(.*)_", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym")
+    ),
+    beta_ind2 = if_else(q == 1, beta_3, beta_2),
+    beta_grp = case_when(
+      q == 1 ~ beta_2,
+      q == 3 ~ beta_4,
+      q == 5 ~ beta_6)
+  )
+
+```
+
+## False Positive rate
+
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+
+fp_otu <- best_otu_results %>%
+  ggplot(aes(y = (n_nz - tp)/117, x = cov_str, col = penalty)) +
+  geom_boxplot(width = .3, outlier.size = 0.1) +
+  labs(y = "False positive rate", x = "Random effect covariance") +
+  facet_grid(. ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_percent(accuracy=.1), 
+                     breaks = c(0,.025,.05,.1, .2)
+                     # ,sec.axis =
+                     #   sec_axis(~ .,
+                     #            name = "Design matrix correlation structure",
+                     #            breaks = NULL,
+                     #            labels = NULL)
+                     ) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.title.y = element_text(size = 10)) +
+  scale_color_mine()
+
+fp_otu
+
+ggsave(
+    "../plots/fp_otu.pdf",
+    fp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+## True positives 
+
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+
+tp_otu <- best_otu_results %>%
+  ggplot(aes(y = tp, x = cov_str, col = penalty)) +
+  geom_boxplot(width = .3, outlier.size = 0.1) +
+  labs(y = "True positives (out of 11)", x = "Random effect covariance") +
+  facet_grid(correlation ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_number(accuracy = 1),
+                     breaks = c(5,8,11)
+                     ,sec.axis =
+                       sec_axis(~ .,
+                                name = "Design matrix correlation structure",
+                                breaks = NULL,
+                                labels = NULL)
+                     ) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+tp_otu
+
+ggsave(
+    "../plots/tp_otu.pdf",
+    tp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+
+## Parameter estimates
+
+How do we do at estimating the unpenalized intercept?
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+df_true <- data.frame(y_value = 1) 
+unp_otu <- best_otu_results %>%
+  ggplot(aes(y = beta_1, x = cov_str, col = penalty)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter"),
+             linewidth = .4) +
+  labs(y = "Estimated Intercept", x = "Random effect covariance") +
+  facet_grid(. ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(labels = scales::label_number(accuracy = 1),
+                     # sec.axis =
+                     #   sec_axis(~ .,
+                     #            name = "Design matrix correlation structure",
+                     #            breaks = NULL,
+                     #            labels = NULL)
+                     ) +
+  theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+unp_otu
+
+ggsave(
+    "../plots/unp_otu.pdf",
+    unp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+
+
+
+How do we do at estimating the penalized 7th component of beta? 
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+df_true <- data.frame(y_value = -1) 
+pen_otu <- best_otu_results %>%
+  ggplot(aes(y = beta_7, x = cov_str, col = penalty)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter"),
+             linewidth = .4) +
+  labs(y = "Estimated parameter", x = "Random effect covariance") +
+  facet_grid(correlation ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(breaks = seq(-1,0,.5)
+                     ,sec.axis =
+                       sec_axis(~ .,
+                                name = "Design matrix correlation structure",
+                                breaks = NULL,
+                                labels = NULL)
+                     ) +
+ theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+pen_otu
+
+ggsave(
+    "../plots/pen_otu.pdf",
+    unp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+How do we do at estimating the second component of beta that is measured at the individual level. Note that this is beta3 for the settings with only 1 random effect and beta2 for the settings with more than 1 random effect. Also note that for the former, this coefficient is penalized, whereas it is not for the latter.
+
+
+
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+df_true <- data.frame(y_value = 2) 
+beta_ind2_otu <- best_otu_results %>%
+  ggplot(aes(y = beta_ind2, x = cov_str, col = penalty)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter"),
+             linewidth = .4) +
+  labs(y = "Estimated parameter", x = "Random effect covariance") +
+  facet_grid(. ~ q, space = "free", scales = "free_x",
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  # scale_y_continuous(sec.axis =
+  #                      sec_axis(~ .,
+  #                               name = "Design matrix correlation structure",
+  #                               breaks = NULL,
+  #                               labels = NULL)
+  #                    ) +
+ theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+beta_ind2_otu
+
+ggsave(
+    "../plots/beta_ind2_otu.pdf",
+    beta_ind2_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+
+How do we do at estimating the effect of the variable measured at the group level. Note that this is `beta_2` for settings with 1 random effect, `beta_4` for settings with 3 random effects, and `beta_6` for settings with 5 random effects. In all cases, the coefficient on this variable was unpenalized when we fit the model. 
+
+
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+df_true <- data.frame(y_value = -1) 
+beta_grp_otu <- best_otu_results %>%
+  ggplot(aes(y = beta_grp, x = cov_str, col = penalty)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter"),
+             linewidth = .4) +
+  labs(y = "Estimated parameter", x = "Random effect covariance") +
+  facet_grid( ~ q, space = "free", scales = "free", 
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(breaks = c(-5,-1,5), limits = c(-5,5),
+                     # sec.axis = 
+                     #   sec_axis(~ ., name = "Design matrix correlation structure",
+                     #    breaks = NULL,
+                     #    labels = NULL)
+                     ) +
+ theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+beta_grp_otu
+
+ggsave(
+    "../plots/beta_grp_otu.pdf",
+    beta_grp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+How do we do at estimating the intercept random effect variance
+
+```{r}
+# Change `.` to `correlation` in `facet_grid` and uncomment sec_axis 
+# if you want break down by type of design matrix structure.
+# Currently aggregating results across the OTU correlation structures 
+df_true <- data.frame(y_value = .56) 
+var_otu <- best_otu_results %>%
+  ggplot(aes(y = psi_1, x = cov_str, col = penalty)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter"),
+             linewidth = .4) +
+  labs(y = "Estimated parameter", x = "Random effect covariance") +
+  facet_grid(correlation ~ q, space = "free", scales = "free", 
+             labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
+  scale_y_continuous(limits = c(0,1), n.breaks = 3,
+                     sec.axis =
+                       sec_axis(~ ., name = "Design matrix correlation structure",
+                        breaks = NULL,
+                        labels = NULL)
+                     ) +
+ theme(#strip.text.x = element_text(size = 10 ),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+var_otu
+
+ggsave(
+    "../plots/var_otu.pdf",
+    beta_grp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+```
+
+
+#### Diagonal variance components
+
+```{r}
+
+df_true <- data.frame(parameter = rep(c(1, 2, 3), 6), 
+                      y_value = rep(c(.56, 1, 1), 6), 
+                      correlation = rep(levels(factor(best_otu_results$correlation)), each = 3))
+
+var_diag_otu <- best_otu_results %>%
+  filter(q==3, cov_str == "diag") %>%
+  pivot_longer(cols = c(psi_1, psi_5, psi_9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3, aes(col = penalty)) +
+  geom_segment(data = df_true, aes(x = parameter-.2, xend = parameter+.2,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  facet_grid(correlation ~ 1) +
+  scale_y_continuous(limits = c(0,2), 
+                     n.breaks = 3,
+                     sec.axis=
+                       sec_axis(~ ., name = "Design matrix structure",
+                        breaks = NULL,
+                        labels = NULL)
+                      ) +
+ theme(strip.text.x = element_blank(),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+
+var_diag_otu
+
+```
+### Symmetric variance components
+
+```{r}
+Lsym <- matrix(c(sqrt(.56), 0,0, sqrt(.5), sqrt(.5), 0, sqrt(.1), -sqrt(.8), sqrt(.1)), nrow = 3, byrow=T)
+df_true <- data.frame(parameter = rep(1:6, 6), 
+                      y_value = rep(miscTools::vecli(Lsym %*% t(Lsym)), 6), correlation = rep(levels(factor(best_otu_results$correlation)), each = 6))
+
+
+var_sym_otu <- best_otu_results %>%
+  filter(q==3, cov_str == "sym") %>%
+  pivot_longer(cols = c(psi_1, psi_2, psi_3, psi_5, psi_6, psi_9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(outlier.size=0.1 ,width=.3, aes(col = penalty)) +
+  geom_segment(data = df_true, aes(x = parameter-.2, xend = parameter+.2,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  facet_grid(~ 1) +
+  scale_y_continuous(limits = c(-2,2), 
+                     n.breaks = 5,
+                     # sec.axis=
+                     #   sec_axis(~ ., name = "Design matrix structure",
+                     #    breaks = NULL,
+                     #    labels = NULL)
+                      ) +
+ theme(strip.text.x = element_blank(),
+      strip.text.y = element_text(size = 5), 
+      legend.title = element_blank(),
+      axis.text.y = element_text(size = 10)) +
+  scale_color_mine()
+
+var_sym_otu
+
+
+```
+
+
+
+
 
 
 

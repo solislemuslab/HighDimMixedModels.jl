@@ -5,8 +5,8 @@ using DataFrames
 using DelimitedFiles
 using Serialization
 
-data_dir = "data/OTU/random1_covid"
-file_name = "rs_data_LinShi_75.csv"
+data_dir = "data/OTU/random3_covsym"
+file_name = "data_erdos_renyi_21.csv"
 
 df = CSV.read("$data_dir/$file_name", DataFrame) 
 X_names = [col for col in names(df) if startswith(col, "X")]
@@ -23,7 +23,7 @@ control.trace = 3
 #control.cov_int = (-50, 50)
 #control.var_int = (0, 100000)
 
-λs = Float64.(20:1:21)
+λs = Float64.(20:5:30)
 res_matrix = Vector{Any}(undef, length(λs))
 for (i, λ) in enumerate(λs)
 
@@ -31,9 +31,9 @@ for (i, λ) in enumerate(λs)
     try 
         Z = X[:,1:(end-1)]
         est = lmmlasso(X, G, y, grp, Z;
-            standardize = true, penalty = "scad", 
+            standardize = false, penalty = "scad", 
             λ=λ, scada = 3.7, wts = fill(1.0, size(G)[2]), 
-            init_coef = nothing, ψstr="ident", control=control)
+            init_coef = nothing, ψstr="sym", control=control)
     
         println("Model converged! Hurrah!")
         println("Initial number of non-zeros is $(est.init_nz)")
