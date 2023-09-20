@@ -168,12 +168,17 @@ end
 
 """
 Calculates (y-ỹ)'*(invV)*X[:,j], where ỹ are the fitted values if we ignored the jth column i.e. XG[:,Not(j)]*β[Not(j)]
+To improve perforamce, we calculate ỹ with the entire dataset 
+We then split into groups and calculate (y-ỹ)'*(invV)*X[:,j] for each group
 """
-function special_quad(XGgrp, invVgrp, ygrp, β, j) 
+function special_quad(XG, y, β, j, invVgrp, XGgrp, grp) 
     
+    XGmiss = XG[:,Not(j)]
     βmiss = β[Not(j)]
+    resid = y - XGmiss*βmiss
 
-    residgrp = [y - XG[:,Not(j)]*βmiss for (y, XG) in zip(ygrp, XGgrp)]
+
+    residgrp = [resid[grp .== group] for group in unique(grp)]
 
     quads = [resid'*invV*XG[:,j] for (resid, invV, XG) in zip(residgrp, invVgrp, XGgrp)]
 

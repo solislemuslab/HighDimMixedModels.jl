@@ -55,7 +55,7 @@ Positional:
 - G :: High dimensional design matrix for penalized fixed effects (assumed to not include column of ones) (REQUIRE)
 - y :: Vector of responses (REQUIRED)
 - grp :: Vector of strings of same length as y assigning each observation to a particular group (REQUIRED)
-- Z :: Design matrix for random effects (default is all columns of X). Assumed to include column of ones
+- Z :: Design matrix for random effects (default is all columns of X)
 NOTE: Z is not expected to be given in block diagonal form. It should be a vertical stack of subject design matrices Z₁, Z₂, ...
 
 Keyword:
@@ -73,9 +73,11 @@ fixed effect parameters. Then, the random effect parameters are initialized as M
 OUTPUT
 - Fitted model
 """
-function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, grp::Vector{String}, Z::Matrix{Float64}=X;
-    standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, wts::Vector{Float64}=fill(1, size(G, 2)),
-    init_coef::Union{Vector,Nothing}=nothing, ψstr::String="diag", control::Control=Control())
+function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, 
+    grp::Vector{String}, Z::Matrix{Float64}=X;
+    standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, 
+    wts::Union{Vector, Nothing}=nothing, init_coef::Union{Vector,Nothing}=nothing, 
+    ψstr::String="diag", control::Control=Control())
 
     ##Get dimensions
     N = length(y) # Total number of observations
@@ -96,9 +98,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     @assert length(grp) == N "grp and y incompatable dimension"
     @assert g > 1 "Only one group, no covariance parameters can be estimated"
 
-    #Intercept included checks
+    #Intercept included check
     @assert X[:, 1] == ones(N) "First column of X must be all ones"
-    @assert Z[:, 1] == ones(N) "First column of Z must be all ones"
 
     #Check whether columns of Z are a subset of the columns of X, or is this not necessary?
 
@@ -106,6 +107,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
     @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
     @assert λ > 0 "λ is regularization parameter, must be positive"
     @assert scada > 0 "scada is regularization parameter, must be positive"
+    wts = (wts === nothing ? fill(1, p) : wts)
     @assert all(wts .> 0) "Weights must be positive"
     @assert length(wts) == p "Number of weights must equal number of penalized covariates"
     # Create the vector of penalty parameters of length q + p, i.e. one for each fixed effect
@@ -208,10 +210,10 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
 
     stopped = false #Make true if we start interpolating the data
     do_all = false
-    arm_con = 0 #Goes up by 1 every time an Armijo step fails to converge
     counter_in = 0
     counter = 0
-    num_arm = 0
+    num_arm = 0 #Goes up by 1 every time Armijo needs to be performed (cannot be computed analytically)
+    arm_con = 0 #Goes up by 1 every time an Armijo step fails to converge
 
     while (max(convβ, conv_varp, conv_fct) > control.tol || !do_all) && (counter < control.max_iter)
 
@@ -252,7 +254,9 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, gr
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
-            cut = special_quad(XGgrp, invVgrp, ygrp, βiter, j)
+
+            # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
+            cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp) 
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:q
