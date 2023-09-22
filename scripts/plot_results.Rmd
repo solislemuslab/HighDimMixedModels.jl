@@ -67,35 +67,43 @@ These numbers should all be 100.
 
 ## Plotting gene results for nz = 5 
 
-### False positive rate
-In each of these boxplots, the data being plotted are the FPRs of a 100 models fit to 100 different simulated datasets. In particular, there is one model for each dataset, the model that minimizes BIC.
+
 ```{r}
-fp <- best_gene_results %>%
+bgr_nz5 <- best_gene_results %>%
   filter(str_detect(setting, "nz5")) %>%
   mutate(
     cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
     penalty = str_extract(setting, "covid_(.*)-", group = 1),
-    p = factor(
-      str_extract(setting, "dim([0-9]+)", group = 1),
-      levels = c('500', "1000")
-    )
-  ) %>%
-  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
-  ggplot(aes(y = (n_nz - tp)/(as.numeric(as.character(p))-5), col = penalty)) +
-  geom_boxplot(position = position_dodge(width = 0.9)) +
-  facet_grid(`Correlated predictors` ~ p) +
+    p = as.numeric(
+      str_extract(setting, "dim([0-9]+)", group = 1)
+    ),
+    predictor_cor = if_else(cor == "0.0", "No", "Yes")
+  ) 
+```
+
+### False positive rate
+In each of these boxplots, the data being plotted are the FPRs of a 100 models fit to 100 different simulated datasets. In particular, there is one model for each dataset, the model that minimizes BIC.
+```{r}
+fp <- bgr_nz5 %>% 
+  group_by(penalty, p, predictor_cor) %>%
+  mutate(fp = (n_nz - tp)/(p-5),
+         outlier = fp > quantile(fp, .75) + IQR(fp) * 1.5) %>%
+  ungroup() %>%
+  ggplot(aes(penalty, fp, col = penalty)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(data = function(x) dplyr::filter_(x, ~ outlier), 
+              height = 0, width = .3) +
+  facet_grid(predictor_cor ~ p) +
   labs(y = "False positive rate") +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         #strip.text.x = element_text(size = 20),
-        #strip.text.y = element_text(size = 10), 
-        text = element_text(size = 15), 
+        #strip.text.y = element_text(size = 10),
+        text = element_text(size = 15),
         axis.text.y = element_text(size = 10)) +
   scale_y_continuous(labels = scales::percent, sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
-  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
-  scale_color_brewer(type = "qual")
-
-
+  scale_x_discrete(position ="top", name = "Fixed effect dimension") +
+  scale_color_brewer(type = "qual", labels = c("SCAD", "LASSO"))
 fp
 ggsave(
     "../plots/fp_nz5.pdf",
@@ -110,20 +118,15 @@ ggsave(
 ### True positives
 
 ```{r}
-tp <- best_gene_results %>%
-  filter(str_detect(setting, "nz5")) %>%
-  mutate(
-    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
-    penalty = str_extract(setting, "covid_(.*)-", group = 1),
-    p = factor(
-      str_extract(setting, "dim([0-9]+)", group = 1),
-      levels = c('500', "1000")
-    )
-  ) %>% 
-  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
-  ggplot(aes(y = tp, col = penalty)) +
-  geom_boxplot(position = position_dodge(width = 0.9)) +
-  facet_grid(`Correlated predictors` ~ p) +
+tp <- bgr_nz5 %>% 
+  group_by(penalty, p, predictor_cor) %>%
+  mutate(outlier = tp < quantile(tp, .75) + IQR(tp) * 1.5) %>%
+  ungroup() %>%
+  ggplot(aes(penalty, tp, col = penalty)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(data = function(x) dplyr::filter_(x, ~ outlier), 
+              height = 0, width = .3) +
+  facet_grid(predictor_cor ~ p) +
   labs(y = "True positives (out of 5)") +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
@@ -133,8 +136,8 @@ tp <- best_gene_results %>%
         axis.text.y = element_text(size = 10)) +
   scale_y_continuous(labels = scales::label_number(accuracy=1), limits = c(0,5),
                      sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
-  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
-  scale_color_brewer(type = "qual")
+  scale_x_discrete(position ="top", name = "Fixed effect dimension") +
+  scale_color_brewer(type = "qual", labels = c("SCAD", "LASSO"))
 
 
 tp
@@ -147,7 +150,6 @@ ggsave(
   units = "cm"
 )
 ```
-
 All exactly 5! Perfect results
 
 ### Parameter estimates
@@ -156,21 +158,18 @@ How do we do at estimating the unpenalized intercept
 ```{r}
 df_true <- data.frame(y_value = 1) 
 
-unp <- best_gene_results %>%
-  filter(str_detect(setting, "nz5")) %>%
-  mutate(
-    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
-    penalty = str_extract(setting, "covid_(.*)-", group = 1),
-    p = factor(
-      str_extract(setting, "dim([0-9]+)", group = 1),
-      levels = c('500', "1000")
-    )
-  ) %>% 
-  mutate(`Correlated predictors` = if_else(cor == "0.0", "No", "Yes")) %>%
-  ggplot(aes(y = beta_1, col = penalty)) +
-  geom_boxplot(position = position_dodge(width = 0.9)) +
+unp <- bgr_nz5 %>% 
+  group_by(penalty, p, predictor_cor) %>%
+  mutate(outlier = beta_1 > quantile(beta_1, .75) + IQR(beta_1) * 1.5 | 
+           beta_1 < quantile(beta_1, .25) - IQR(beta_1) * 1.5) %>%
+  ungroup() %>%
+  ggplot(aes(penalty, beta_1, col = penalty)) +
+  geom_boxplot() +
+  # geom_jitter(data = function(x) dplyr::filter_(x, ~ outlier),
+  #             height = 0, width = .3) +
+  facet_grid(predictor_cor ~ p) +
   geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
-  facet_grid(`Correlated predictors` ~ p) +
+  facet_grid(predictor_cor ~ p) +
   labs(y = "Estimated intercept") +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
@@ -180,14 +179,12 @@ unp <- best_gene_results %>%
         text = element_text(size = 15), 
         axis.text.y = element_text(size = 10),
         legend.text = element_text(size = 10)) +
-  scale_y_continuous(labels = scales::label_number(accuracy=.1), limits = c(0,2),
+  scale_y_continuous(labels = scales::label_number(accuracy=.1), limits = c(.5,1.5),
                      sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
-  scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
-  scale_color_brewer(type = "qual", 
-                     labels = c("Estimates with LASSO", 
-                                "Estimates with SCAD"))
+  scale_x_discrete(position ="top", name = "Fixed effect dimension") +
+  scale_color_brewer(type = "qual", labels = c("SCAD", "LASSO"))
 
-
+unp
 ggsave(
   "../plots/unp_nz5.pdf",
   unp,
@@ -763,8 +760,8 @@ best_gwas_results %>%
       str_extract(setting, "cov(.*)_", group = 1),
       levels = c("id", "diag", "sym"))
     ) %>% 
-      filter(cov_str == "sym", penalty == "scad") %>%
-      select(lambda, tp)
+      filter(cov_str == "diag", penalty == "scad") %>%
+      select(data_id, lambda, tp, beta_1, beta_2, beta_3, starts_with("psi"))
   
 ```
 
@@ -905,6 +902,8 @@ ggsave(
 #### Diagonal and symmetric variance components
 
 Not implemented yet. If we want to check these, we must divide by standard deviations because right now, Psi is on the scale of the standardized covariates.
+
+
 
 # OTU Results
 
