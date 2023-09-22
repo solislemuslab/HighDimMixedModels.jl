@@ -1,3 +1,4 @@
+using Revise
 using HighDimMixedModels
 using ZipFile
 using CSV
@@ -5,7 +6,7 @@ using DataFrames
 using DelimitedFiles
 using Serialization
 
-data_dir = "data/OTU/random3_covsym"
+data_dir = "data/OTU/random1_covid"
 file_name = "data_erdos_renyi_21.csv"
 
 df = CSV.read("$data_dir/$file_name", DataFrame) 
@@ -23,7 +24,7 @@ control.trace = 3
 #control.cov_int = (-50, 50)
 #control.var_int = (0, 100000)
 
-λs = Float64.(20:5:30)
+λs = Float64.(60:5:80)
 res_matrix = Vector{Any}(undef, length(λs))
 for (i, λ) in enumerate(λs)
 

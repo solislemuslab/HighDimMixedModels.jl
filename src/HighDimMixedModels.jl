@@ -100,6 +100,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
     #Intercept included check
     @assert X[:, 1] == ones(N) "First column of X must be all ones"
+    Z_int = (Z[:, 1] == ones(N)) #Bool for whether Z includes intercept (i.e. whether there's a random intercept)
 
     #Check whether columns of Z are a subset of the columns of X, or is this not necessary?
 
@@ -140,11 +141,18 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         XG = (XG[:, Not(1)] .- meansx) ./ sdsx
         XG = [fill(1, N) XG]
 
-        Zor = copy(Z)
-        meansz = mean(Z[:, Not(1)], dims=1)
-        sdsz = std(Z[:, Not(1)], dims=1)
-        Z = (Z[:, Not(1)] .- meansz) ./ sdsz
-        Z = [fill(1, N) Z]
+        if Z_int 
+            Zor = copy(Z)
+            meansz = mean(Z[:, Not(1)], dims=1)
+            sdsz = std(Z[:, Not(1)], dims=1)
+            Z = (Z[:, Not(1)] .- meansz) ./ sdsz
+            Z = [fill(1, N) Z]
+        else 
+            Zor = copy(Z)
+            meansz = mean(Z, dims=1)
+            sdsz = std(Z, dims=1)
+            Z = (Z .- meansz) ./ sdsz
+        end
     end
 
     #Get grouped data, i.e. lists of matrices/vectors
@@ -160,7 +168,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     # ---------------------------------------------
     if init_coef === nothing
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = fit(LassoModel, XG[:, Not(1)], y;
+        lassopath = fit(LassoModel, XG[:, Not(1)], y; maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/pull/44
             penalty_factor=[zeros(q - 1); 1 ./ wts], select=MinCVmse(Kfold(N, 10)))
         βstart = coef(lassopath) #Fixed effects
         #Initialize covariance parameters
@@ -345,21 +353,6 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         @warn "$counter iterations reached without convergence"
     end
 
-    #Get coefficients and design matrices on the original scale 
-    if (standardize)
-        βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
-        βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
-
-        XG = XGor
-        Z = Zor
-
-        for group in unique(grp)
-            Zᵢ, XGᵢ = Z[grp.==group, :], XG[grp.==group, :]
-            push!(Zgrp, Zᵢ)
-            push!(XGgrp, XGᵢ)
-        end
-    end
-
     #In case of identity or diagonal covariance structure, form matrix version of L for future calculations
     if isa(Liter, Number)
         Lmat = Liter * I(m)
@@ -369,14 +362,30 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         Lmat = Liter
     end
 
+    #Get parameters and design matrices on the original scale 
+    if (standardize)
+        βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
+        βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
+        Lmat = Diagonal([1; vec(1 ./ sdsz)]) * Lmat
+
+        XG = XGor
+        Z = Zor
+        Zgrp, XGgrp = Matrix[], Matrix[]
+        for group in unique(grp)
+            Zᵢ, XGᵢ = Z[grp.==group, :], XG[grp.==group, :]
+            push!(Zgrp, Zᵢ)
+            push!(XGgrp, XGᵢ)
+        end
+    end
+
     #Predicted random effects
-    resid = [yᵢ - XGᵢ * βiter for (yᵢ, XGᵢ) in zip(ygrp, XGgrp)]
-    u = sqrt(σ²iter) * [inv(Lmat' * Zᵢ' * Zᵢ * Lmat + σ²iter * I(m)) * Lmat' * Zᵢ' * residᵢ for (Zᵢ, residᵢ) in zip(Zgrp, resid)]
+    resid_fixed = [yᵢ - XGᵢ * βiter for (yᵢ, XGᵢ) in zip(ygrp, XGgrp)]
+    u = sqrt(σ²iter) * [inv(Lmat' * Zᵢ' * Zᵢ * Lmat + σ²iter * I(m)) * Lmat' * Zᵢ' * residᵢ for (Zᵢ, residᵢ) in zip(Zgrp, resid_fixed)]
     b = [Lmat * uᵢ for uᵢ in u] / sqrt(σ²iter)
 
     #Fitted values and residuals
     fitted = [XGᵢ * βiter + Zᵢ * bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
-    resid = [residᵢ - Zᵢ * bᵢ for (residᵢ, Zᵢ, bᵢ) in zip(resid, Zgrp, b)]
+    resid = [yᵢ - fittedᵢ  for (yᵢ, fittedᵢ) in zip(ygrp, fitted)]
 
     #Number of covariance parameters
     nz_covpar = sum(Liter .!= 0)
@@ -393,13 +402,14 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     nz = sum(βiter .!= 0)
 
     #Criteria
-    npar = sum(βiter .!= 0) + n_covpar
+    npar = sum(βiter .!= 0) + nz_covpar
     deviance = 2 * neglike_iter
     aic = deviance + 2 * npar
     bic = deviance + log(N) * npar
 
+
     #Return
-    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts,
+    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts, sdsz=sdsz, 
         init_coef=(βstart=βstart, Lstart=Lstart, σ²start=σ²start), init_log_like=-neglike_start, init_objective=fct_start,
         init_nz=nz_start, penalty=penalty, λ=λ, scada=scada, σ²=σ²iter, L=Lmat, fixef=βiter, ranef=b, fitted=fitted,
         resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance, arm_con=arm_con,

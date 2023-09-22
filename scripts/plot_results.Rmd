@@ -95,6 +95,8 @@ fp <- best_gene_results %>%
   scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
   scale_color_brewer(type = "qual")
 
+
+fp
 ggsave(
     "../plots/fp_nz5.pdf",
     fp,
@@ -133,6 +135,9 @@ tp <- best_gene_results %>%
                      sec.axis = sec_axis(~ . , name = "Correlated predictors?", breaks = NULL, labels = NULL)) +
   scale_x_continuous(sec.axis = sec_axis(~ . , name = "Fixed effect dimension", breaks = NULL, labels = NULL)) +
   scale_color_brewer(type = "qual")
+
+
+tp
 
 ggsave(
   "../plots/tp_nz5.pdf",
@@ -488,6 +493,8 @@ ggsave(
   units = "cm"
 )
 ```
+Performance of the LASSO is affected negatively by correlation between predictors.
+
 
 
 ```{r}
@@ -746,6 +753,23 @@ ggsave(
   )
 ```
 
+
+```{r}
+best_gwas_results %>%
+  mutate(
+    penalty = str_extract(setting, "cov.*_(.*)-", group = 1),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      levels = c("id", "diag", "sym"))
+    ) %>% 
+      filter(cov_str == "sym", penalty == "scad") %>%
+      select(lambda, tp)
+  
+```
+
+
+
 ### Parameter estimates
 How do we do at estimating the unpenalized intercept?
 ```{r}
@@ -883,6 +907,8 @@ ggsave(
 Not implemented yet. If we want to check these, we must divide by standard deviations because right now, Psi is on the scale of the standardized covariates.
 
 # OTU Results
+
+This cell takes super long to run because of the `case_when` function--I have no idea why...might want to change `case_when` to two nested if_elses
 ```{r}
 best_otu_results <- otu_results %>%
   group_by(setting, data_id) %>%
@@ -916,15 +942,16 @@ fp_otu <- best_otu_results %>%
   ggplot(aes(y = (n_nz - tp)/117, x = cov_str, col = penalty)) +
   geom_boxplot(width = .3, outlier.size = 0.1) +
   labs(y = "False positive rate", x = "Random effect covariance") +
-  facet_grid(. ~ q, space = "free", scales = "free_x",
+  facet_grid(correlation ~ q, space = "free", scales = "free_x",
              labeller = labeller(q = q.labs)) + #Get rid of space argument if you want box plot width to automatically adjust to space in facet
-  scale_y_continuous(labels = scales::label_percent(accuracy=.1), 
-                     breaks = c(0,.025,.05,.1, .2)
-                     # ,sec.axis =
-                     #   sec_axis(~ .,
-                     #            name = "Design matrix correlation structure",
-                     #            breaks = NULL,
-                     #            labels = NULL)
+  scale_y_continuous(labels = scales::label_percent(accuracy=1), 
+                     breaks = c(0,.05, .1),
+                     limits  = c(0,.1),
+                     ,sec.axis =
+                       sec_axis(~ .,
+                                name = "Design matrix correlation structure",
+                                breaks = NULL,
+                                labels = NULL)
                      ) +
   theme(#strip.text.x = element_text(size = 10 ),
       strip.text.y = element_text(size = 5), 
@@ -1055,7 +1082,7 @@ pen_otu
 
 ggsave(
     "../plots/pen_otu.pdf",
-    unp_otu,
+    pen_otu,
     width = 20,
     height = 15,
     units = "cm"
@@ -1173,7 +1200,7 @@ var_otu
 
 ggsave(
     "../plots/var_otu.pdf",
-    beta_grp_otu,
+    var_otu,
     width = 20,
     height = 15,
     units = "cm"
@@ -1198,13 +1225,13 @@ var_diag_otu <- best_otu_results %>%
   geom_segment(data = df_true, aes(x = parameter-.2, xend = parameter+.2,
                                    y = y_value, yend = y_value,
                                    linetype = "True Parameter")) +
-  facet_grid(correlation ~ 1) +
+  facet_grid( ~ 1) +
   scale_y_continuous(limits = c(0,2), 
                      n.breaks = 3,
-                     sec.axis=
-                       sec_axis(~ ., name = "Design matrix structure",
-                        breaks = NULL,
-                        labels = NULL)
+                     # sec.axis=
+                     #   sec_axis(~ ., name = "Design matrix structure",
+                     #    breaks = NULL,
+                     #    labels = NULL)
                       ) +
  theme(strip.text.x = element_blank(),
       strip.text.y = element_text(size = 5), 
@@ -1214,6 +1241,16 @@ var_diag_otu <- best_otu_results %>%
 
 
 var_diag_otu
+
+
+ggsave(
+    "../plots/var_diag_otu.pdf",
+    beta_grp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
+
 
 ```
 ### Symmetric variance components
@@ -1249,7 +1286,13 @@ var_sym_otu <- best_otu_results %>%
 
 var_sym_otu
 
-
+ggsave(
+    "../plots/var_sym_otu.pdf",
+    beta_grp_otu,
+    width = 20,
+    height = 15,
+    units = "cm"
+  )
 ```
 
 
