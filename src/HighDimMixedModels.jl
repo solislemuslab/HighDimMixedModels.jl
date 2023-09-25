@@ -141,14 +141,13 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         XG = (XG[:, Not(1)] .- meansx) ./ sdsx
         XG = [fill(1, N) XG]
 
+        Zor = copy(Z)
         if Z_int 
-            Zor = copy(Z)
             meansz = mean(Z[:, Not(1)], dims=1)
             sdsz = std(Z[:, Not(1)], dims=1)
             Z = (Z[:, Not(1)] .- meansz) ./ sdsz
             Z = [fill(1, N) Z]
         else 
-            Zor = copy(Z)
             meansz = mean(Z, dims=1)
             sdsz = std(Z, dims=1)
             Z = (Z .- meansz) ./ sdsz
@@ -245,7 +244,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
             stopped = true
             break
         end
-          
+        
+        # We make the active set include all covariates every act_num iterations
         if counter_in == 0 || counter_in > control.act_num
             active_set = 1:(p+q)
             counter_in = 1
@@ -335,8 +335,11 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         conv_varp = norm(varp_iter - varp_old) / (1 + norm(varp_iter))
         conv_fct = abs(fct_iter - fct_old) / (1 + abs(fct_iter))
 
+        #If convergence criterion satisfied, then next iteration, update all fixed effects
+        #If parameters still doesn't change after that, then the while condition won't get satisfied 
+        #because do_all will be true
         if max(convβ, conv_varp, conv_fct) <= control.tol
-            counter_in = 0 #Update all entries next iteration and if parameters still doesn't change, then call it quits
+            counter_in = 0 
         end
 
     end
@@ -363,10 +366,15 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     end
 
     #Get parameters and design matrices on the original scale 
-    if (standardize)
+    if standardize
         βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
         βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
-        Lmat = Diagonal([1; vec(1 ./ sdsz)]) * Lmat
+        
+        if Z_int
+            Lmat = Diagonal([1; vec(1 ./ sdsz)]) * Lmat
+        else
+            Lmat = Diagonal(vec(1 ./ sdsz)) * Lmat
+        end
 
         XG = XGor
         Z = Zor
