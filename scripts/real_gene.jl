@@ -19,7 +19,10 @@ N = length(y)
 grp = readlines("$data_dir/riboflavingrouped_structure.csv")
 grp = [replace(x, "\"" => "") for x in grp]
 
-# random intercept model
+# Fit random intercept model 
+# and save the names of the genes with non-zero effcts in this model
+# Note that the model results in no variation in intercepts 
+# (so effectively the same as a LASSO wtihout random effects)
 X = ones(N, 1)
 control = Control()
 control.trace = 3
@@ -29,13 +32,15 @@ Random.seed!(1234)
 int_fit = lmmlasso(X, gene_expressions, y, grp; 
     penalty="scad", λ=λ, ψstr="ident", control=control)
 beta = int_fit.fixef
+println("Number of non-zero coefs in initial fit: $(int_fit.nz), bic is $(int_fit.bic)")
+idxs = findall(beta[2:end] .!= 0) #skip the intercept
+gene_names = names(ribo)[3:end][idxs]
+save_object("data/real/gene_expressions/gene_names.jld2", gene_names)
 
 
 # cycle through each non-zero coefficient estimated from the random intercept fit (which resulted in an intercept variance of 0)
 # for each such coefficient, associate a random effect to the corresponding predictor
-# then fit the model with the random effect
-idxs = findall(beta[2:end] .!= 0) #skip the intercept, which we've already done
-gene_names = names(ribo)[3:end][idxs]
+# then fit the model with this random effect
 res = Vector{Any}(undef, length(idxs))
 for (i, idx) in enumerate(idxs)
     println("idx = $idx")
@@ -64,41 +69,42 @@ for (i, idx) in enumerate(idxs)
         res[i] = "error"
     end
 end
-
-save_object("data/real/gene_expressions/gene_results.jld2", gene_names)
-save_object("data/real/gene_expressions/gene_names.jld2", res)
+save_object("data/real/gene_expressions/gene_results.jld2", res)
 
 
-# We've run the commented out part on the server and can now load results
-# Note when we ran on the server, we get only 31 non-zero coefficients in the original
-# LASSO fit, versus when we run locally we get in the 40's. This is due to some difference
-# between the random number generators on the server (using Julia 1.8) and locally.
+###################################################################
+# Inspect results and fit a final model with random effects 
+# for the genes with the highest random effects from the previous step
 res = load_object("data/real/gene_expressions/gene_results.jld2")
 gene_names = load_object("data/real/gene_expressions/gene_names.jld2")
-gene_names = gene_names[res .!= "error"]
+#filter out model that didn't converge
+gene_names = gene_names[res .!= "error"] 
 res = res[res .!= "error"]
+# Extract ψs and find genes with high random effects
 ψs = [x.ψ[1] for x in res]
-kappa = 0.03
+kappa = 0.2
 lre_mask = ψs .> kappa
 println("Number of genes with high random effect: $(sum(lre_mask))")
 println("Gene names with high random effect: $(gene_names[lre_mask])")
 println("ψs for genes with high random effect: $(ψs[lre_mask])")
-println("BICs for genes with high random effects $([x.bic for x in res[lre_mask]])")
-
-# fit model with random effect for these two genes
 rand_idx = indexin(gene_names[lre_mask], names(ribo)[3:end])
-
 X =  hcat(ones(N), gene_expressions[:, rand_idx])
 Z = gene_expressions[:, rand_idx]
 G = gene_expressions[:, Not(rand_idx)]
-λ = 50
+λ = 45
 Random.seed!(1234)
-final_fit = lmmlasso(X, G, y, grp, Z; penalty="scad", λ=λ, ψstr="diag", control=control)
-final_fit.nz
-final_fit.ψ
-final_fit.σ²
-final_fit.bic
+try 
+    global final_fit = lmmlasso(X, G, y, grp, Z; penalty="scad", λ=λ, ψstr="diag", control=control)
+    save_object("data/real/gene_expressions/final_fit.jld2", final_fit)
+catch e
+    println("An error occurred while fitting the final model: $e")
+end
+
+# Inspection of final_fit
+final_fit = load("data/real/gene_expressions/final_fit.jld2")
+print("Final fit: L is $(final_fit.L), σ² is $(final_fit.σ²)")
+println("Number of non-zero coefs in final fit: $(final_fit.nz), bic is $(final_fit.bic)")
 all_gene_names = names(ribo)[3:end];
 idx_final = final_fit.fixef[2:end] .!= 0;
 final_selected_genes = all_gene_names[idx_final]
-save_object("data/real/gene_expressions/final_fit.jld2", final_fit)
+println("Final selected genes: $(final_selected_genes)")

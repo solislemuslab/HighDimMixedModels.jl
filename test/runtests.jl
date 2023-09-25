@@ -241,7 +241,7 @@ for j in active_set
     end
 end
 
-#splmm's armijo doesn't work so we use lmmSCAD's to check
+#splmm's armijo has bug in calculating deltak for SCAD penalty so we use lmmSCAD's to check
 R"cat(\"Current value of βiter is \", βiter_R, \"\n\")"
 R" 
 for (j in active_set) {
@@ -259,7 +259,6 @@ for (j in active_set) {
     
     @rget βiter_R
     @test isapprox(βiter_R, βiter, atol = 1e-5)
-
 
 end
 
@@ -367,7 +366,7 @@ R"σ2iter_R = optRes$par^2"
 
     @rget σ2iter_R 
     #print(Lsym - Lsym_R)
-    @test isapprox(σ²iter, σ2iter_R , atol = 1e-3)
+    @test isapprox(σ²iter, σ2iter_R , atol = 1e-4)
 
 end
 
