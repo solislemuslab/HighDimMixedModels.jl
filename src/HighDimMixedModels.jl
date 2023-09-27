@@ -195,7 +195,11 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
-
+    # println("L at initialization: $Lstart")
+    # println("σ² at initialization: $σ²start")
+    println("neglike_start at initialization: $neglike_start")
+    println("nz at initialization: $nz_start")
+    # return (Zgrp = Zgrp, β = βstart, invVgrp = invVgrp, ygrp = ygrp, XGgrp = XGgrp)
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
@@ -262,7 +266,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
-
+            println("updating coordintae $j")
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
             cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp) 
 
@@ -285,6 +289,8 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
         control.trace > 2 && println("After updating fixed effects, cost is $fct_iter")
+        control.trace >2 && println("And neglike is $neglike_iter")
+        control.trace >2 && println("And number of non-zero coefficients is $(sum(βiter .!= 0))")
 
         #---Optimization with respect to random effect parameters ----------------------------
         #------------------------------------------------------------------------------------
@@ -325,10 +331,10 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
 
         #Inserted to prevent covergence issues
-        if neglike_iter < 0
-            stopped = true
-            break
-        end
+        # if neglike_iter < 0
+        #     stopped = true
+        #     break
+        # end
 
         #Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
@@ -345,7 +351,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     end
     
     if stopped == true
-        error("log likelihood is positive, model is interpolating data. Choose larger λ.")
+        error("More active fixed effects than samples. Choose larger λ.")
     end
 
     if arm_con > 0
@@ -417,7 +423,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
 
     #Return
-    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts, sdsz=sdsz, 
+    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts, 
         init_coef=(βstart=βstart, Lstart=Lstart, σ²start=σ²start), init_log_like=-neglike_start, init_objective=fct_start,
         init_nz=nz_start, penalty=penalty, λ=λ, scada=scada, σ²=σ²iter, L=Lmat, fixef=βiter, ranef=b, fitted=fitted,
         resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance, arm_con=arm_con,
