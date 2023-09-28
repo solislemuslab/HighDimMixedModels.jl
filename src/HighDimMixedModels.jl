@@ -325,10 +325,10 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
 
         #Inserted to prevent covergence issues
-        if neglike_iter < 0
-            stopped = true
-            break
-        end
+        # if neglike_iter < 0
+        #     stopped = true
+        #     break
+        # end
 
         #Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
@@ -345,7 +345,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     end
     
     if stopped == true
-        error("log likelihood is positive, model is interpolating data. Choose larger λ.")
+        error("More active fixed effects than samples. Choose larger λ.")
     end
 
     if arm_con > 0
@@ -417,7 +417,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
 
     #Return
-    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts, sdsz=sdsz, 
+    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts, 
         init_coef=(βstart=βstart, Lstart=Lstart, σ²start=σ²start), init_log_like=-neglike_start, init_objective=fct_start,
         init_nz=nz_start, penalty=penalty, λ=λ, scada=scada, σ²=σ²iter, L=Lmat, fixef=βiter, ranef=b, fitted=fitted,
         resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance, arm_con=arm_con,
