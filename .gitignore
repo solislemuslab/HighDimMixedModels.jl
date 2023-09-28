@@ -1,4 +1,3 @@
 /Manifest.toml
-sim_results/*csv
-sim_results/*txt
-sim_results/*.png
+sim_results/*
+data/*

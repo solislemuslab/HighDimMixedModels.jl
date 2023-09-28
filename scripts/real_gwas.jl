@@ -6,7 +6,7 @@ using StatsBase
 using Random
 using MLBase
 using Lasso
-
+using JLD2
 
 R"""
 library(BGLR)
@@ -44,17 +44,15 @@ println("""
 Number of non-zero coefs in initial LASSO fit: $(sum(coef(lassopath) .!= 0))
 """)
 
-Xmat_small = Xmat[1:500, :]; G_small = G[1:500, :]; 
-y_small = y[1:500]; grp_small = grp[1:500]; Z_small = Z[1:500, :];
 λ = 2000
 control = Control()
 control.trace = 3
 control.tol = 1e-3
 Random.seed!(1234)
-gwas_fit2 = lmmlasso(Xmat, G, y, grp, Z; standardize = false,
-    penalty="scad", λ=λ, ψstr="ident", control=control)
-snp_names[gwas_fit2.fixef[4:end] .!= 0]
 
+gwas_fit = lmmlasso(Xmat, G, y, grp, Z; standardize = false,
+    penalty="scad", λ=λ, ψstr="ident", control=control)
+save_object("data/real/GWAS/gwas_fit.jld2", gwas_fit)
 
 
 
