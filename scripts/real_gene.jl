@@ -4,7 +4,6 @@ using DataFrames
 using Lasso
 using MLBase
 using Random
-using Serialization
 using JLD2
 
 # get data

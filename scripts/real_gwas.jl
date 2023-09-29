@@ -54,6 +54,8 @@ gwas_fit = lmmlasso(Xmat, G, y, grp, Z; standardize = false,
     penalty="scad", λ=λ, ψstr="ident", control=control)
 save_object("data/real/GWAS/gwas_fit.jld2", gwas_fit)
 
+################
+gwas_fit = load_object("data/real/GWAS/gwas_fit.jld2")
 
 
 

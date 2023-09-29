@@ -72,12 +72,8 @@ dim(merged_data2)
 
 data = merged_data2
 
+write.csv(data, "data/real/OTU/tss_normalized_data.csv", row.names = F)
 
-
-
-
-data <- cbind(data[, 1], 1, data[, -1])
-colnames(data)[1:2] <- c("grp", "intercept")
 library(stringr)
 ############################################Lmmscad
 library(penalized)

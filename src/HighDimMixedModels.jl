@@ -74,7 +74,7 @@ OUTPUT
 - Fitted model
 """
 function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, 
-    grp::Vector{String}, Z::Matrix{Float64}=X;
+    grp::Vector{<:Union{String, Int64}}, Z::Matrix{Float64}=X;
     standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, 
     wts::Union{Vector, Nothing}=nothing, init_coef::Union{Vector,Nothing}=nothing, 
     ψstr::String="diag", control::Control=Control())
