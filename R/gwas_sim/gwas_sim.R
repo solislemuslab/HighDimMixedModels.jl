@@ -54,14 +54,3 @@ for (i in 1:100) {
     write.csv(X, paste0("data/GWAS/data", i, ".csv"), row.names = FALSE)
 }
 
-#####nessasary input
-library(ggmix)
-admixed <- gen_structured_model(n = 100,
-                                p_design = 500,
-                                p_kinship = 7e2,
-                                percent_causal = 0.10,
-                                percent_overlap = "100",
-                                k = 10, Fst = 0.1,
-                                b0 = 0, 
-                                eta = 0.1, sigma2 = 1)
-str(admixed)
