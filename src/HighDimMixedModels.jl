@@ -195,11 +195,6 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
-    # println("L at initialization: $Lstart")
-    # println("σ² at initialization: $σ²start")
-    println("neglike_start at initialization: $neglike_start")
-    println("nz at initialization: $nz_start")
-    # return (Zgrp = Zgrp, β = βstart, invVgrp = invVgrp, ygrp = ygrp, XGgrp = XGgrp)
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
@@ -266,7 +261,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
-            println("updating coordintae $j")
+            
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
             cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp) 
 
@@ -289,8 +284,6 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
         control.trace > 2 && println("After updating fixed effects, cost is $fct_iter")
-        control.trace >2 && println("And neglike is $neglike_iter")
-        control.trace >2 && println("And number of non-zero coefficients is $(sum(βiter .!= 0))")
 
         #---Optimization with respect to random effect parameters ----------------------------
         #------------------------------------------------------------------------------------
