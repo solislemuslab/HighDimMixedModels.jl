@@ -1,6 +1,25 @@
 library(tidyverse)
 library(splmm)
 
+##### Real genetic (Riboflavin) data ####
+data <- read_csv("data/real/gene_expressions/riboflavingrouped.csv")
+ribo <- as_tibble(t(data[,-1]))
+colnames(ribo) <- data[[1]]
+
+grp <- read_csv("data/real/gene_expressions/riboflavingrouped_structure.csv", 
+                col_names = F) 
+grp <- factor(grp$X1)
+N = nrow(ribo)
+X <- cbind(rep(1, N), as.matrix(ribo[,-1]))
+Z <- as.matrix(rep(1, N))
+y <- ribo$q_RIBFLV
+control = splmmControl()
+control$trace = 3
+lasso_fit <- splmm(X, y, Z, grp, 
+                   lam1=2, lam2=1, penalty.b="lasso", control = control)
+
+
+
 ##### Log-ratio normalized OTU data #######
 # First column ("group") is group identity 
 # Second column ("X1") is all ones
@@ -81,7 +100,7 @@ summary(scad_fit)
 scad_fit$converged
 
 
-##### Bigger data-sets (GWAS data with ~1000 columns) ######
+##### Simulated GWAS data with ~1000 columns ######
 gwas_data <- read_csv("data/GWAS/random1_covid/data1.csv")
 
 group <- factor(gwas_data$group)
@@ -112,7 +131,6 @@ tp = c(1,2,4,3,3,-1,5,-3,2,2,0)
 cbind(tp, init = lasso_fit$coefInit[[1]][1:11], 
       scad = scad_fit$coefficients[1:11], lasso = lasso_fit$coefficients[1:11])
 c("lasso_aic" = lasso_fit$aic, "scad_aic" = scad_fit$aic)
-
 
 
 

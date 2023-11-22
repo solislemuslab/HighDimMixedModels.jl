@@ -2,7 +2,7 @@
 #library(edgeR)
 #library(scran)
 library(dplyr)
-load("~/Desktop/ALLWork/Madison/Project/High dimensional mixed effects models/rosa_report/DOE_R/ageset.Rdata")
+load("data/real/OTU/ageset.Rdata")
 
 OTU_original <- data.obj$otu.tab
 OTU_original <- t(OTU_original)
@@ -74,8 +74,9 @@ data = merged_data2
 
 write.csv(data, "data/real/OTU/tss_normalized_data.csv", row.names = F)
 
-library(stringr)
+
 ############################################Lmmscad
+library(stringr)
 library(penalized)
 library(emulator)
 library(MASS)
