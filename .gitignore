@@ -1,3 +1,6 @@
 /Manifest.toml
 sim_results/*
 data/*
+.Rhistory
+launch.json
+.DS_Store
