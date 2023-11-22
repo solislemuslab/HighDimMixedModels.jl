@@ -11,7 +11,7 @@ data_dir = "data/real/gene_expressions"
 ribo = CSV.read("$data_dir/riboflavingrouped.csv", DataFrame; 
     transpose = true, types = Dict(1 => String)) 
 gene_expressions = Matrix{Float64}(ribo[:,3:end])
-gene_names = names(ribo)[3:end]
+all_gene_names = names(ribo)[3:end]
 y = ribo[:,2]
 N = length(y)
 # group info
@@ -21,19 +21,20 @@ grp = [replace(x, "\"" => "") for x in grp]
 # Fit random intercept model 
 # and save the names of the genes with non-zero effcts in this model
 # Note that the model results in no variation in intercepts 
-# (so effectively the same as a LASSO wtihout random effects)
+# (so effectively the same as a LASSO without random effects)
 X = ones(N, 1)
 control = Control()
 control.trace = 3
 λ = 45
 control.tol = 1e-3
 Random.seed!(1234)
+# we choose to standardize
 int_fit = lmmlasso(X, gene_expressions, y, grp; 
     penalty="scad", λ=λ, ψstr="ident", control=control)
 beta = int_fit.fixef
 println("Number of non-zero coefs in initial fit: $(int_fit.nz), bic is $(int_fit.bic)")
 idxs = findall(beta[2:end] .!= 0) #skip the intercept
-gene_names = names(ribo)[3:end][idxs]
+gene_names = all_gene_names[idxs]
 save_object("data/real/gene_expressions/gene_names.jld2", gene_names)
 
 
@@ -54,6 +55,7 @@ for (i, idx) in enumerate(idxs)
     local λ = 45
     Random.seed!(1234)
     try 
+        # we choose to standardize
         est = lmmlasso(X, G, y, grp, Z; penalty="scad", λ=λ, ψstr="ident", control=control)
         println("Model converged! Hurrah!")
         println("Initial number of non-zeros is $(est.init_nz)")
@@ -86,13 +88,14 @@ lre_mask = ψs .> kappa
 println("Number of genes with high random effect: $(sum(lre_mask))")
 println("Gene names with high random effect: $(gene_names[lre_mask])")
 println("ψs for genes with high random effect: $(ψs[lre_mask])")
-rand_idx = indexin(gene_names[lre_mask], names(ribo)[3:end])
+rand_idx = indexin(gene_names[lre_mask], all_gene_names)
 X =  hcat(ones(N), gene_expressions[:, rand_idx])
 Z = gene_expressions[:, rand_idx]
 G = gene_expressions[:, Not(rand_idx)]
 λ = 45
 Random.seed!(1234)
 try 
+    # we choose to standardize
     global final_fit = lmmlasso(X, G, y, grp, Z; penalty="scad", λ=λ, ψstr="diag", control=control)
     save_object("data/real/gene_expressions/final_fit.jld2", final_fit)
 catch e
@@ -100,10 +103,12 @@ catch e
 end
 
 # Inspection of final_fit
-final_fit = load("data/real/gene_expressions/final_fit.jld2")
+final_fit = load("data/real/gene_expressions/final_fit.jld2")["single_stored_object"]
 print("Final fit: L is $(final_fit.L), σ² is $(final_fit.σ²)")
 println("Number of non-zero coefs in final fit: $(final_fit.nz), bic is $(final_fit.bic)")
-all_gene_names = names(ribo)[3:end];
 idx_final = final_fit.fixef[2:end] .!= 0;
+all_gene_names = [all_gene_names[rand_idx] # put names of genes that were placed in X first
+    all_gene_names[Not(rand_idx)]] # then put the rest of the genes
 final_selected_genes = all_gene_names[idx_final]
-println("Final selected genes: $(final_selected_genes)")
+println("Final selected genes and their estimates:")
+[["intercept"; final_selected_genes] final_fit.fixef[final_fit.fixef .!= 0]]

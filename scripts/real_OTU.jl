@@ -21,7 +21,12 @@ control.trace = 3
 λ = 75
 control.tol = 1e-3
 Random.seed!(1234)
+# We choose to standardize because the data has been library sum scaled and so is very small numbers
 int_fit = lmmlasso(X, otus, y, grp; 
     penalty="scad", λ=λ, ψstr="ident", control=control)
 
 save_object("data/real/OTU/otu_fit.jld2", int_fit)
+
+
+# load otu_fit.jld2
+otu_fit = load_object("data/real/OTU/otu_fit.jld2")

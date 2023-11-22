@@ -400,3 +400,7 @@ function σ²update(XGgrp, ygrp, Zgrp, β, L, var_int)
 
 end
 
+
+
+
+

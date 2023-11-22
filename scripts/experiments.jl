@@ -1,20 +1,21 @@
 using Revise
-#using HighDimMixedModels
+using HighDimMixedModels
 using ZipFile
 using CSV
 using DataFrames
 using DelimitedFiles
 using Serialization
 
-r = ZipFile.Reader("data/GWAS/random3_covdiag.zip")
-λs = Float64.(70:1:71)
+r = ZipFile.Reader("data/dim1000_random1_rho0.0_nz10_covid.zip")
+λs = Float64.(40:1:45)
 res_matrix = Array{Any}(undef, 1, length(λs) + 1)
 # data_dir = "data/OTU/random1_covid"
 # file_names = readdir(data_dir)
 # filter!(x -> occursin("rs_data_LinShi", x), file_names)
 # println(length(file_names))
+file = filter(f -> f.name == "dim1000_random1_rho0.0_nz10_covid/data15.csv", r.files)   
 
-for (i, f) in enumerate([r.files[77]]) #First file is just the folder
+for (i, f) in enumerate(file) #First file is just the folder
 #for (i, f) in enumerate(file_names)
 
     println("Filename: $(f.name)")
@@ -43,7 +44,7 @@ for (i, f) in enumerate([r.files[77]]) #First file is just the folder
         println("λ is $λ")
         try
             est = lmmlasso(X, G, y, grp;
-                standardize=true, penalty="scad",
+                standardize=false, penalty="lasso",
                 λ=λ, scada=3.7, wts=fill(1.0, size(G)[2]),
                 init_coef=nothing, ψstr="diag", control=control)
 

@@ -195,6 +195,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
+    println("hey")
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
@@ -262,6 +263,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
         #Update fixed effect parameters that are in active_set
         for j in active_set
             
+            println(j)
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
             cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp) 
 
@@ -391,8 +393,12 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     b = [Lmat * uᵢ for uᵢ in u] / sqrt(σ²iter)
 
     #Fitted values and residuals
-    fitted = [XGᵢ * βiter + Zᵢ * bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
-    resid = [yᵢ - fittedᵢ  for (yᵢ, fittedᵢ) in zip(ygrp, fitted)]
+    fittedgrp = [XGᵢ * βiter + Zᵢ * bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
+    fitted = similar(y)
+    for (i, group) in enumerate(unique(grp))
+        fitted[grp.==group] = fittedgrp[i]
+    end
+    resid = y-fitted
 
     #Number of covariance parameters
     nz_covpar = sum(Liter .!= 0)

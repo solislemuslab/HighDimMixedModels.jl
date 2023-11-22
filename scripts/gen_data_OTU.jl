@@ -8,7 +8,6 @@ using StatsBase
 include("sim_helpers.jl") 
 using Main.simulations #Exports simulate_design() and simulate_y()
 
-
 # Global simulation variables
 n=fill(12, 10)
 grp = string.(inverse_rle(1:length(n), n))
