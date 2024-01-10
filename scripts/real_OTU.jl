@@ -10,6 +10,7 @@ using JLD2
 data_dir = "data/real/OTU"
 d = CSV.read("$data_dir/tss_normalized_data.csv", DataFrame)
 
+
 N = size(d)[1]
 grp = d.country
 otus = Matrix(d[:,2:(end-1)])

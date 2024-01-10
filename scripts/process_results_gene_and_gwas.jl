@@ -3,6 +3,7 @@ using Serialization
 using CSV
 using DataFrames
 
+#Change to false to process gene expression simulations instead
 GWAS = true
 
 #Matrix to store result for best lambda
@@ -15,8 +16,9 @@ dir_path =  GWAS ? "sim_results/gwas/" : "sim_results/"
 setting_names = readdir(dir_path)
 setting_names = setting_names[endswith.(setting_names, "results.txt")]
 
-#Iterate through each setting
+
 global i = 1 #Index of next row to fill in in best_results
+#Iterate through each setting
 for setting_name in setting_names
     
     setting = open(dir_path*setting_name, "r")

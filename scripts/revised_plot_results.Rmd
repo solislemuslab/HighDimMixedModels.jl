@@ -1,0 +1,1430 @@
+---
+title: "Plots Revised"
+author: "Evan Gorstein"
+date: "2023-12-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+library(RColorBrewer)
+library(latex2exp)
+library(kableExtra)
+# set plotting theme -----------
+theme_set(theme_bw())
+theme_update(panel.grid = element_blank())
+
+my_colors = brewer.pal(n=3, "Accent")[1:2]
+scale_color_mine = function(...) {
+  ggplot2:::manual_scale("color", 
+               values = setNames(my_colors, c("lasso", "scad")),
+               ...)
+}
+
+# q.labs = c("q: 1", "q: 3", "q: 5")
+# names(q.labs) <- c("1", "3", "5")
+# 
+# p.labs = c("p=500", "p=1000")
+# names(p.labs) = c(500, 1000)
+
+```
+
+# Read in the data:
+```{r, message=FALSE}
+gene_results <- read_csv("../sim_results/best_results.csv")
+gwas_results <- read_csv("../sim_results/gwas/best_results.csv")
+otu_lr_results <- read_csv("../sim_results/OTU/LinShi/LinShi_lr_best_results.csv")
+otu_results <- read_csv("../sim_results/OTU/spring/best_results.csv")
+```
+
+These data frames contain the fits with the best two BIC's (across all lambdas) for each dataset generated under each setting.
+
+
+
+# Gene expression results
+Let's check on the count for each setting
+
+```{r}
+gene_results %>%
+  count(setting)
+```
+
+These numbers should all be 200. Unfortunately, they're not all 200 because for some settings not all 100 data sets receive top two results because some datasets failed to converge for all lambdas.
+
+Looking at just the best lambda: 
+
+```{r}
+best_gene_results <- gene_results %>% 
+  arrange(setting, data_id, bic) %>% 
+  group_by(setting, data_id) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+count(best_gene_results, setting)
+```
+
+
+
+
+These numbers should all be 100. 
+
+
+Closer look to see what's missing
+
+```{r}
+
+
+bgr_filt <- best_gene_results %>%
+  group_by(setting) %>%
+  mutate(n = n()) %>%
+  ungroup() %>%
+  filter(n < 100) %>%
+  select(setting, data_id, lambda, n_nz, sigma, psi_1, bic) %>%
+  arrange(setting, data_id) 
+all <- expand(bgr_filt, setting, data_id)
+
+#Missing
+all %>% anti_join(bgr_filt)
+
+#Missing appear at the end of this data frame with NAs in all but first 2 columns
+bgr_filt %>% 
+  right_join(all)
+
+```
+
+## Variable selection 
+
+### Main text 
+
+We want to plot the distribution of false and true positives for the simulations with 10 true fixed effects, 3 of which are random effects.
+
+First, we filter our `best_gene_results` data-frame to only those simulations that had 10 true fixed effects:
+```{r}
+bgr_nz10 <- best_gene_results %>%
+  filter(str_detect(setting, "nz10")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = factor(str_extract(setting, "cov.*_(.*)-", group = 1)),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = recode_factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      id = "scalar", diag = "diagonal", sym = "unstructured"
+    ),
+    predictor_cor = if_else(cor == "0.0", "No", "Yes"),
+    fp = n_nz - tp,
+    f = (2*tp)/(tp+fp+10)
+  ) 
+
+```
+
+Now we can create the plot of false positives for those simulations for which there were 3 random effects:
+```{r, warning=FALSE}
+no_out = data.frame(cov_str = factor(
+                      c("unstructured", "unstructured"), 
+                      levels = c("scalar", "diagonal", "unstructured")
+                      ),
+                    penalty = c("scad", "scad"),
+                    predictor_cor = c("No", "Yes"), 
+                    fp = NA,
+                    outlier = TRUE,
+                    plot = FALSE)
+
+corr.labs = c("correlated features", "independent features")
+names(corr.labs) <- c("Yes", "No")
+
+gene_main_fp <- bgr_nz10 %>%
+  filter(q == 3) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  mutate(outlier = fp > quantile(fp, .75) + IQR(fp) * 1.5,
+         plot = TRUE) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>%
+  {
+  ggplot(data =., aes(y = fp/990, x = cov_str, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2)) +
+  labs(y = "false positive rate", x = TeX("$\\Psi_\\theta$ structure")) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gene_main_fp
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gene_main_fp.pdf",
+  gene_main_fp,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+We can similarly create the plot of true positives for those simulations for which there were 3 random effects:
+```{r, warning=FALSE}
+no_out = data.frame(q = c("3", "3","3","3"), 
+                    cov_str = factor(
+                      c( "scalar", "scalar", "diagonal", "unstructured"), 
+                      levels = c("scalar", "diagonal", "unstructured")
+                      ),
+                    penalty = c( "scad", rep("lasso", 3) ),
+                    predictor_cor = c( "No", "Yes", "No", "No"), 
+                    tp = NA,
+                    outlier = TRUE,
+                    plot = FALSE)
+
+gene_main_tp <- bgr_nz10 %>%
+  filter(q==3) %>%
+  group_by(penalty, cov_str, q, predictor_cor) %>%
+  mutate(outlier = tp > quantile(tp, .75) + IQR(tp) * 1.5 | tp < quantile(tp, .25) - IQR(tp)) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>%
+  {
+  ggplot(data = ., aes(y = tp, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = NA)  +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.3)) +
+  labs(y = "# true positives (out of 10)", x = TeX("$\\Psi_\\theta$ structure")) +
+  scale_y_continuous(breaks = c(3,6,10)) +
+  facet_wrap(~ predictor_cor, nrow = 2, labeller = labeller(predictor_cor = corr.labs)) +
+  theme(
+    legend.position = "top",
+    axis.ticks.x = element_blank(),
+    text = element_text(size = 18), 
+    axis.title.y = element_text(size = rel(.85))
+        ) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gene_main_tp
+
+ggsave( 
+  "../revised_plots/gene_main_tp.pdf",
+  gene_main_tp,
+  width = 20,
+  height = 15,
+  units = "cm"
+) 
+```
+
+Let's combine these using patchworks:
+```{r, warning=FALSE}
+gene_main_fp + gene_main_tp + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gene_main_select.pdf", width = 40, height = 15, units = "cm")
+```
+
+
+### Supplementary material
+First, we filter our `best_gene_results` data-frame to only those simulations that had 5 true fixed effects:
+```{r}
+bgr_nz5 <- best_gene_results %>%
+  filter(str_detect(setting, "nz5")) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = str_extract(setting, "covid_(.*)-", group = 1),
+    p = as.numeric(
+      str_extract(setting, "dim([0-9]+)", group = 1)
+    ),
+    predictor_cor = if_else(cor == "0.0", "No", "Yes"),
+    fp = n_nz - tp,
+    f = (2*tp)/(tp+fp+5)
+  ) 
+```
+
+Now we can create the plot of false positives for those simulations that had 5 true fixed effects:
+
+```{r}
+gene_supp_nz5_fp <- bgr_nz5 %>% 
+  group_by(penalty, p, predictor_cor) %>%
+  mutate(outlier = fp > quantile(fp, .75) + IQR(fp) * 1.5) %>%
+  ungroup() %>% 
+  ggplot(aes(as.factor(p), fp/(p-5), col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = NA) +
+  geom_point(data = function(x) dplyr::filter(x, outlier), pch=21, 
+              position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.3)) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  labs(y = "false positive rate", x = TeX("dimension ($p$)")) +
+  theme(
+    legend.position = "top",
+    axis.ticks.x = element_blank(),
+    text = element_text(size = 18), 
+    axis.title.y = element_text(size = rel(.85))
+        ) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+
+gene_supp_nz5_fp
+ggsave(
+    "../revised_plots/gene_supp_nz5_fp.pdf",
+    gene_supp_nz5_fp,
+    width = 15,
+    height = 15,
+    units = "cm"
+  )
+
+```
+
+
+We can similarly create the plot of true positives for those simulations for which there were 5 true fixed effects:
+```{r}
+gene_supp_nz5_tp <- bgr_nz5 %>% 
+  group_by(penalty, p, predictor_cor) %>%
+  mutate(outlier = tp < quantile(tp, .25) - IQR(tp) * 1.5) %>%
+  ungroup() %>% 
+  ggplot(aes(factor(p), tp, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = NA) +
+  geom_point(data = function(x) dplyr::filter(x, outlier), pch=21, 
+              position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.3)) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  labs(y = "# true positives (out of 5)", x = TeX("dimension ($p$)")) +
+  scale_y_continuous(limits = c(0,5)) +
+  theme(
+    legend.position = "top",
+    axis.ticks.x = element_blank(),
+    text = element_text(size = 18), 
+    axis.title.y = element_text(size = rel(.85))
+        ) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+
+gene_supp_nz5_tp
+ggsave(
+    "../revised_plots/gene_supp_nz5_tp.pdf",
+    gene_supp_nz5_tp,
+    width = 15,
+    height = 15,
+    units = "cm"
+  )
+
+```
+
+We can create the plot of false positives for those simulations that had 10 true fixed effects, and 1 or 5 random effects.
+```{r, warning=FALSE}
+no_out = data.frame(q = c("1", "5"), 
+                    penalty = c("lasso", "lasso"),
+                    predictor_cor = c("No", "Yes"), 
+                    fp = NA,
+                    outlier = TRUE,
+                    plot = FALSE)
+
+corr.labs = c("correlated features", "independent features")
+names(corr.labs) <- c("Yes", "No")
+
+gene_supp_nz10_fp <- bgr_nz10 %>%
+  filter(q != 3) %>%
+  group_by(penalty, q, predictor_cor) %>%
+  mutate(outlier = fp > quantile(fp, .75) + IQR(fp) * 1.5,
+         plot = TRUE) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>%
+  {
+  ggplot(data =., aes(y = fp/990, x = q, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2)) +
+  labs(y = "false positive rate", x = TeX("# random effects ($q$)")) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gene_supp_nz10_fp
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gene_supp_nz10_fp.pdf",
+  gene_supp_nz10_fp,
+  width = 15,
+  height = 15,
+  units = "cm"
+)
+```
+
+We can similarly create the plot of true positives for those simulations that had 10 true fixed effects, and 1 or 5 random effects.
+```{r, warning=FALSE}
+no_out = data.frame(q = c("1", "5", "5"), 
+                    penalty = c("scad", rep("lasso", 2)),
+                    predictor_cor = c("No", "No", "Yes"), 
+                    tp = NA,
+                    outlier = TRUE,
+                    plot = FALSE)
+corr.labs = c("correlated features", "independent features")
+names(corr.labs) <- c("Yes", "No")
+
+gene_supp_nz10_tp <- bgr_nz10 %>%
+  filter(q != 3) %>%
+  group_by(penalty, q, predictor_cor) %>%
+  mutate(outlier = tp < quantile(tp, .25) - IQR(tp) * 1.5,
+         plot = TRUE) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>%
+  {
+  ggplot(data =., aes(y = tp, x = q, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2)) +
+  labs(y = "# true positives (out of 10)", x = TeX("# random effects ($q$)")) +
+  facet_wrap(~ predictor_cor, nrow = 2, labeller = labeller(predictor_cor = corr.labs)) +
+  theme(
+    legend.position = "top",
+    axis.ticks.x = element_blank(),
+    text = element_text(size = 18), 
+    axis.title.y = element_text(size = rel(.85))
+        ) +
+  scale_y_continuous(limits = c(0, 10), breaks = c(1,5,10), labels = scales::label_number(accuracy=1)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+      }
+gene_supp_nz10_tp
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gene_supp_nz10_tp.pdf",
+  gene_supp_nz10_tp,
+  width = 15,
+  height = 15,
+  units = "cm"
+)
+```
+
+Now we can combine the above 4 plots with patchwork:
+```{r}
+(gene_supp_nz5_fp + gene_supp_nz5_tp) / (gene_supp_nz10_fp + gene_supp_nz10_tp) + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gene_supp_select.pdf", width = 40, height = 30, units = "cm")
+```
+
+
+
+
+### F-scores
+
+Here's a table summary of f-scores
+```{r}
+bgr_nz10 %>%
+  group_by(penalty, cov_str, q, predictor_cor) %>% 
+  summarise(mn = mean(f), min = min(f), med = median(f), max = max(f), n = n())
+```
+
+Here's a table summary of false positives 
+```{r}
+bgr_nz10 %>%
+  group_by(penalty, cov_str, q, predictor_cor) %>% 
+  summarise(mn = mean(fp), min = min(fp), med = median(fp), max = max(fp), n = n())
+```
+
+
+## Estimation
+
+
+### Main text
+
+We want to plot the distribution of a penalized estimator and the distribution of an unpenalized estimator for the simulations with 10 true fixed effects, 3 of which are random effects.
+
+
+We start with an unpenalized estimator. Let's look at $\hat{\beta_2}$, which was unpenalized because $q=3$. 
+```{r, warning=FALSE}
+df_true <- data.frame(y_value = 2) 
+no_out = data.frame(cov_str = factor(
+                      c("scalar", "unstructured"), 
+                      levels = c("scalar", "diagonal", "unstructured")
+                      ),
+                    penalty = c("scad", "lasso"),
+                    predictor_cor = c("Yes", "Yes"), 
+                    beta_2 = NA,
+                    outlier = TRUE,
+                    plot = FALSE)
+
+
+gene_main_beta2 <- bgr_nz10 %>%
+  filter(q == 3) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  mutate(outlier = beta_2 > quantile(beta_2, .75) + IQR(beta_2) * 1.5 | 
+           beta_2 < quantile(beta_2, .25) - IQR(beta_2) * 1.5,
+         plot = TRUE) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>%
+  {
+  ggplot(data =., aes(y = beta_2, x = cov_str, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2), show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_2$"), x = TeX("$\\Psi_\\theta$ structure")) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gene_main_beta2
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gene_main_beta2.pdf",
+  gene_main_beta2,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+What about $\beta_3$? Weirdly, we get a slightly different picture even though 
+```{r, warning=FALSE}
+df_true <- data.frame(y_value = 4) 
+no_out = data.frame(cov_str = factor(
+                      c("scalar", "unstructured"), 
+                      levels = c("scalar", "diagonal", "unstructured")
+                      ),
+                    penalty = c("scad", "lasso"),
+                    predictor_cor = c("Yes", "Yes"), 
+                    beta_3 = NA,
+                    outlier = TRUE,
+                    plot = FALSE)
+
+
+gene_main_beta3 <- bgr_nz10 %>%
+  filter(q == 3) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  mutate(outlier = beta_3 > quantile(beta_3, .75) + IQR(beta_3) * 1.5 | 
+           beta_3 < quantile(beta_3, .25) - IQR(beta_3) * 1.5,
+         plot = TRUE) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>%
+  {
+  ggplot(data =., aes(y = beta_3, x = cov_str, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2),
+             show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_3$"), x = TeX("$\\Psi_\\theta$ structure")) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gene_main_beta3
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gene_main_beta3.pdf",
+  gene_main_beta3,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+In particular, there is a lot of bias in the LASSO estimates when the features are correlated (and remember, bias for the is expected for coefficients that have a penalty applied for the LASSO but $\beta_3$ is unpenalized here), and this bias is worse for the scalar covariance structure. This likely has to do with the fact that the LASSO is trying to use $\beta3$ to compensate for setting $\beta_4:\beta_10$ to 0 in these settings (see the plot of true positives).
+
+Now, let's take a look at a penalized parameter, $\beta_8$.
+
+```{r}
+counts <- bgr_nz10 %>%
+  filter(q == 3) %>%
+  filter(beta_8 == 0) %>%
+  group_by(predictor_cor, cov_str, penalty) %>%
+  summarise( n = n(), .groups = "drop") %>%
+  complete(predictor_cor, cov_str, penalty, fill = list(n = 0)) 
+
+df_true <- data.frame(y_value = -3) 
+
+gene_main_beta8 <- bgr_nz10 %>%
+  filter(q == 3) %>%
+  filter(beta_8 != 0) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  ungroup() %>% 
+  {
+  ggplot(data =., aes(y = beta_8, x = cov_str, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = 21) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  geom_text(data = counts, aes(cov_str, 0, label = n), 
+            position = position_dodge(width = 0.9), size = 5, 
+            show.legend  = F) +
+  labs(y = TeX("$\\beta_8$"), x = TeX("$\\Psi_\\theta$ structure")) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  scale_y_continuous(limits = c(-3.5, 0.5), labels = scales::label_number(accuracy=1)) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  }
+
+gene_main_beta8
+ggsave(
+  "../revised_plots/gene_main_beta8.pdf",
+  gene_main_beta8,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+ 
+Now we can combine the above 2 plots with patchwork:
+```{r warning=FALSE}
+gene_main_beta3 + gene_main_beta8 + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gene_main_est.pdf", width = 40, height = 15, units = "cm")
+```
+
+### Supplementary material
+
+Distribution of $beta_3$ in settings with 1 and 5 random effects. In the first, $beta_3$ is penalized; in the latter, it is unpenalized.
+```{r, warning=FALSE}
+df_true <- data.frame(y_value = 4) 
+counts <- bgr_nz10 %>%
+  filter(q != "3") %>%
+  filter(beta_3 == 0) %>%
+  group_by(predictor_cor, q, penalty) %>%
+  summarise( n = n(), .groups = "drop") %>%
+  complete(predictor_cor, q=c("1","5"), penalty, fill = list(n = 0))
+
+gene_supp_beta3 <- bgr_nz10 %>%
+  filter(q != "3") %>%
+  filter(beta_3 != 0) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  ungroup() %>% 
+  {
+    ggplot(data =., aes(y = beta_3, x = q, 
+                      col = penalty)) +
+      geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = 21) +
+      geom_text(data = counts, aes(q, 0, label = n), 
+            position = position_dodge(width = 0.9), size = 5, 
+            show.legend  = F) +
+      geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+      labs(y = TeX("$\\beta_3$"), x = TeX("# random effects ($q$)")) +
+      scale_y_continuous(limits = c(-0.5, 4.5), labels = scales::label_number(accuracy=1)) +
+      facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+      theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+      scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gene_supp_beta3
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gene_supp_beta3.pdf",
+  gene_supp_beta3,
+  width = 15,
+  height = 15,
+  units = "cm"
+)
+```
+
+Distribution of penalized $beta_8$ in settings with 1 and 5 random effects.
+```{r}
+counts <- bgr_nz10 %>%
+  filter(q != "3") %>%
+  filter(beta_8 == 0) %>%
+  group_by(predictor_cor, q, penalty) %>%
+  summarise( n = n(), .groups = "drop") %>%
+  complete(predictor_cor, q, penalty, fill = list(n = 0)) 
+
+df_true <- data.frame(y_value = -3) 
+
+gene_supp_beta8 <- bgr_nz10 %>%
+  filter(q != 3) %>%
+  filter(beta_8 != 0) %>%
+  group_by(penalty, q, predictor_cor) %>%
+  ungroup() %>% 
+  {
+  ggplot(data =., aes(y = beta_8, x = q, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = 21) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  geom_text(data = counts, aes(q, 0, label = n), 
+            position = position_dodge(width = 0.9), size = 5, 
+            show.legend  = F) +
+  labs(y = TeX("$\\beta_8$"), x = TeX("# random effects ($q$)")) +
+  facet_wrap(~ predictor_cor, nrow = 2, 
+             labeller = labeller(predictor_cor = corr.labs)) +
+  scale_y_continuous(limits = c(-3.5, 0.5), labels = scales::label_number(accuracy=1)) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  }
+
+gene_supp_beta8
+ggsave(
+  "../revised_plots/gene_main_beta8.pdf",
+  gene_supp_beta8,
+  width = 15,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+Distribution of penalized $beta_3$ in settings with only 5 non-zero fixed effects
+
+
+
+```{r, warning=FALSE}
+no_out = data.frame(
+                    penalty = c("scad", "lasso"),
+                    predictor_cor = c("Yes", "Yes"), 
+                    p = c(1000, 500),
+                    beta_3 = NA,
+                    outlier = TRUE)
+df_true <- data.frame(y_value = 4) 
+gene_supp_nz5_beta3 <- bgr_nz5 %>% 
+  group_by(penalty, p, predictor_cor) %>%
+  mutate(outlier = beta_3 > quantile(beta_3, .75) + IQR(beta_3) * 1.5 | 
+           beta_3 < quantile(beta_3, .25) - IQR(beta_3) * 1.5) %>%
+  ungroup() %>% 
+  bind_rows(no_out) %>% 
+  {
+  ggplot(data =., aes(y = beta_3, x = factor(p), 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), outlier.shape = NA) +
+  geom_point(data = filter(., outlier),
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2),
+             show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_3$"), x = TeX("dimension ($p$)")) +
+  facet_wrap(~ predictor_cor, nrow = 2,
+             labeller = labeller(predictor_cor = corr.labs)) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  }
+
+gene_supp_nz5_beta3
+ggsave(
+    "../revised_plots/gene_supp_nz5_beta3.pdf",
+    gene_supp_nz5_beta3,
+    width = 15,
+    height = 15,
+    units = "cm"
+  )
+```
+
+We don't show distribution of $beta_8$ in settings with only 5 non-zero fixed effects because $beta_8$ is 0 (and is estimated by the model as such).
+
+Now we can combine the above 3 plots for our supplementary materials estimation figure:
+
+```{r}
+(gene_supp_nz5_beta3) / (gene_supp_beta3 + gene_supp_beta8) + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gene_supp_est.pdf", width = 40, height = 30, units = "cm")
+```
+
+## Variance components
+
+### Scalar
+
+Variance components when covariance structure is scalar
+```{r}
+
+df_true <- data.frame(y_value = 0.56) 
+
+var_ge_scalar <- bgr_nz10 %>%
+  filter(cov_str == "scalar") %>%
+  ggplot(aes(y = psi_1, x=q)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty), outlier.shape = 21)  +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = "Estimated parameter", x = TeX("# random effects ($q$)")) +
+  facet_wrap(~ predictor_cor, nrow = 2,
+             labeller = labeller(predictor_cor = corr.labs)) +
+  scale_y_continuous(labels = scales::label_number(accuracy=.1)) +
+  coord_cartesian(ylim = c(0,1)) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  
+var_ge_scalar
+
+
+ggsave(
+  "../revised_plots/var_ge_scalar.pdf",
+  var_ge_scalar,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+### Diagonal
+
+```{r}
+df_true <- data.frame(parameter = rep(c(1, 2, 3), 2), 
+                      y_value = rep(c(3, 3, 2), 2), predictor_cor = rep(c("No", "Yes"), each = 3))
+
+var_ge_diag <- bgr_nz10 %>%
+  filter(cov_str == "diagonal") %>%
+  pivot_longer(cols = c(psi_1, psi_5, psi_9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty), outlier.shape = 21) +
+  geom_segment(data = df_true, aes(x = parameter-.4, xend = parameter+.4,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  facet_wrap(~ predictor_cor, nrow = 2,
+             labeller = labeller(predictor_cor = corr.labs)) +
+  labs(y = "Estimated parameter", x = TeX("Entry in $\\Psi")) +
+  scale_x_discrete(labels = c( TeX("$\\Psi_{1,1}"), TeX("$\\Psi_{2,2}"), TeX("$\\Psi_{3,3}"))) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  
+var_ge_diag
+
+ggsave(
+  "../revised_plots/var_ge_diag.pdf",
+  var_diag_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+### Unstructured
+
+```{r}
+Lsym <- matrix(c(sqrt(3), 0 ,0, 1, sqrt(3), 0, -sqrt(2), 1, sqrt(2)), nrow = 3, byrow = T)
+df_true <- data.frame(parameter = rep(1:9, 2), 
+                      y_value = rep(as.vector(Lsym %*% t(Lsym)), 2), predictor_cor = rep(c("No", "Yes"), each = 9))
+
+var_ge_sym <- bgr_nz10 %>%
+  filter(cov_str == "unstructured") %>%
+  pivot_longer(cols = paste0("psi_", 1:9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty), outlier.shape = 21) +
+  geom_segment(data = df_true, aes(x = parameter-.4, xend = parameter+.4,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  facet_wrap(~ predictor_cor, nrow = 2,
+             labeller = labeller(predictor_cor = corr.labs)) +
+  scale_x_discrete(labels = c( TeX("$\\Psi_{1,1}"),
+                               TeX("$\\Psi_{1,2}"),
+                               TeX("$\\Psi_{1,3}"),
+                               TeX("$\\Psi_{2,1}"),
+                               TeX("$\\Psi_{2,2}"),
+                               TeX("$\\Psi_{2,3}"),
+                               TeX("$\\Psi_{3,1}"),
+                               TeX("$\\Psi_{3,2}"),
+                               TeX("$\\Psi_{3,3}"))) +
+  labs(y = "Estimated parameter", x = TeX("Entry in $\\Psi")) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+var_ge_sym
+ggsave(
+  "../revised_plots/var_ge_sym.pdf",
+  var_diag_nz10,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+Combine into final plot
+
+```{r}
+(var_ge_scalar + var_ge_diag) / var_ge_sym + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/var_ge_comp.pdf", width = 40, height = 30, units = "cm")
+```
+
+# GWAS
+
+Check that there are 200 rows for each setting
+```{r}
+gwas_results %>%
+  count(setting)
+```
+
+Get results for only the best $\lambda$ for each dataset.
+```{r}
+best_gwas_results <- gwas_results %>%
+  group_by(setting, data_id) %>%
+  arrange(bic, .by_group = TRUE) %>%
+  filter(row_number() == 1) %>%
+  mutate(
+    cor = str_extract(setting, "rho([0-9]+\\.[0-9]+)", group = 1),
+    penalty = factor(str_extract(setting, "cov.*_(.*)-", group = 1)),
+    q = str_extract(setting, "random([0-9])", group = 1),
+    cov_str = recode_factor(
+      str_extract(setting, "cov(.*)_", group = 1),
+      id = "scalar", diag = "diagonal", sym = "unstructured"
+    ),
+    predictor_cor = if_else(cor == "0.0", "No", "Yes"),
+    fp = n_nz - tp,
+    f = (2*tp)/(tp+fp+10)
+  ) 
+```
+
+
+## Variable selection
+
+### Main text
+
+```{r}
+
+gwas_main_fp <- best_gwas_results  %>%
+  filter(q==3) %>%
+  group_by(cov_str, q) %>%
+  mutate(outlier = fp > quantile(fp, .75) + IQR(fp) * 1.5) %>%
+  ungroup() %>%
+  ggplot(aes(y = fp/990, x = cov_str, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9),
+               width = .3, outlier.shape = 21, show.legend = F) +
+  labs(y = "false positive rate", x = TeX("$\\Psi_\\theta$ structure")) + 
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+
+gwas_main_fp
+
+ggsave(
+  "../revised_plots/gwas_main_fp.pdf",
+  gwas_main_fp,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+
+True positives
+
+```{r}
+counts <- best_gwas_results %>%
+  group_by(penalty, cov_str, q) %>%
+  summarise(
+    cnt_perfect = sum(tp == 10), .groups = "drop",
+    ) %>% 
+  filter(q == 3)
+
+
+gwas_main_tp <- best_gwas_results  %>%
+  filter(q==3) %>%
+  group_by(cov_str, q) %>%
+  ungroup() %>%
+  filter(tp < 10) %>%
+  ggplot(aes(y = tp, x = cov_str, col = penalty)) +
+  geom_point(pch = 21, 
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = .05,
+               jitter.width = 0.3)) +
+  geom_text(data = counts, aes(cov_str, 10, label = cnt_perfect),
+            show.legend = FALSE,
+            position = position_dodge(width = 0.9), size = 5) +
+  labs(y = "# true positives (out of 10)", x = TeX("$\\Psi_\\theta$ structure")) + 
+  scale_y_continuous(labels = scales::label_number(accuracy = 1), 
+                     limits = c(0,10), breaks = c(3,6,9,10)) +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+
+gwas_main_tp
+
+ggsave(
+  "../revised_plots/gwas_main_tp.pdf",
+  gwas_main_fp,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+
+
+```
+
+Now let's add them together
+
+```{r}
+gwas_main_fp + gwas_main_tp + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gwas_main_select.pdf", width = 40, height = 10, units = "cm")
+```
+
+
+
+
+### Supplementary material
+
+False positives for case $q=1$ and $q=5$:
+
+```{r}
+
+gwas_supp_fp <- best_gwas_results  %>%
+  filter(q!=3) %>%
+  group_by(cov_str, q) %>%
+  mutate(outlier = fp > quantile(fp, .75) + IQR(fp) * 1.5) %>%
+  ungroup() %>%
+  ggplot(aes(y = fp/990, x = q, col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), show.legend = F,
+               width = .3, outlier.shape = 21) +
+  labs(y = "false positive rate", x = TeX("# random effects ($q$)")) + 
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+
+gwas_supp_fp
+
+ggsave(
+  "../revised_plots/gwas_supp_fp.pdf",
+  gwas_main_fp,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+Now true positives 
+```{r}
+counts <- best_gwas_results %>%
+  group_by(penalty, cov_str, q) %>%
+  summarise(
+    cnt_perfect = sum(tp == 10), .groups = "drop",
+    ) %>% 
+  filter(q != 3)
+
+
+gwas_supp_tp <- best_gwas_results  %>%
+  filter(q != 3) %>%
+  group_by(cov_str, q) %>%
+  ungroup() %>%
+  filter(tp < 10) %>%
+  ggplot(aes(y = tp, x = q, col = penalty)) +
+  geom_point(pch = 21, 
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = .05,
+               jitter.width = 0.3)) +
+  geom_text(data = counts, aes(q, 10, label = cnt_perfect),
+            show.legend = FALSE,
+            position = position_dodge(width = 0.9), size = 5) +
+  labs(y = "# true positives (out of 10)", x = TeX("# random effects ($q$)")) + 
+  scale_y_continuous(labels = scales::label_number(accuracy = 1), 
+                     limits = c(0,10), breaks = c(1,5,9,10)) +
+  theme(legend.position = "top",
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+
+gwas_supp_tp
+
+ggsave(
+  "../revised_plots/gwas_supp_tp.pdf",
+  gwas_supp_tp,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+
+Now combine:
+
+```{r}
+gwas_supp_fp + gwas_supp_tp + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gwas_supp_select.pdf", width = 40, height = 10, units = "cm")
+```
+
+
+
+
+## Estimation
+
+### Main text
+
+```{r}
+df_true <- data.frame(y_value = 4)
+gwas_main_beta3 <- best_gwas_results %>%
+  filter(q == 3) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  mutate(outlier = beta_3 > quantile(beta_3, .75) + IQR(beta_3) * 1.5 | 
+           beta_3 < quantile(beta_3, .25) - IQR(beta_3) * 1.5) %>%
+  ungroup() %>%
+  {
+  ggplot(data =., aes(y = beta_3, x = cov_str, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2), show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_3$"), x = TeX("$\\Psi_\\theta$ structure")) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gwas_main_beta3
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gwas_main_beta3.pdf",
+  gwas_main_beta3,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+```{r}
+df_true <- data.frame(y_value = -3)
+gwas_main_beta8 <- best_gwas_results %>%
+  filter(q == 3) %>%
+  group_by(penalty, cov_str, predictor_cor) %>%
+  mutate(outlier = beta_8 > quantile(beta_8, .75) + IQR(beta_8) * 1.5 | 
+           beta_8 < quantile(beta_8, .25) - IQR(beta_8) * 1.5) %>%
+  ungroup() %>%
+  {
+  ggplot(data =., aes(y = beta_8, x = cov_str, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2), show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_8$"), x = TeX("$\\Psi_\\theta$ structure")) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gwas_main_beta8
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gwas_main_beta8.pdf",
+  gwas_main_beta8,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+
+
+Combine
+
+```{r}
+gwas_main_beta3 + gwas_main_beta8 + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gwas_main_est.pdf", width = 40, height = 10, units = "cm")
+
+```
+
+### Supplementary materials
+
+
+```{r}
+df_true <- data.frame(y_value = 4)
+gwas_supp_beta3 <- best_gwas_results %>%
+  filter(q != 3) %>%
+  group_by(penalty, q, predictor_cor) %>%
+  mutate(outlier = beta_3 > quantile(beta_3, .75) + IQR(beta_3) * 1.5 | 
+           beta_3 < quantile(beta_3, .25) - IQR(beta_3) * 1.5) %>%
+  ungroup() %>%
+  {
+  ggplot(data =., aes(y = beta_3, x = q, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2), show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_3$"), x = TeX("# random effects ($q$)")) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gwas_supp_beta3
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gwas_supp_beta3.pdf",
+  gwas_supp_beta3,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+
+```{r}
+df_true <- data.frame(y_value = -3)
+gwas_supp_beta8 <- best_gwas_results %>%
+  filter(q != 3) %>%
+  group_by(penalty, q, predictor_cor) %>%
+  mutate(outlier = beta_8 > quantile(beta_8, .75) + IQR(beta_8) * 1.5 | 
+           beta_8 < quantile(beta_8, .25) - IQR(beta_8) * 1.5) %>%
+  ungroup() %>%
+  {
+  ggplot(data =., aes(y = beta_8, x = q, 
+                      col = penalty)) +
+  geom_boxplot(position = position_dodge(width = 0.9), 
+               outlier.shape = NA) +
+  geom_point(data = filter(., outlier), 
+             pch = 21, #aes(alpha = plot),
+             position = position_jitterdodge(
+               dodge.width = 0.9,
+               jitter.height = 0,
+               jitter.width = 0.2), show.legend  = F) +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = TeX("$\\beta_8$"), x = TeX("# random effects ($q$)")) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+}
+gwas_supp_beta8
+#Note that there are fewer than 100 data-sets for some of the lasso settings (but none of the scad settings)!
+ggsave(
+  "../revised_plots/gwas_supp_beta8.pdf",
+  gwas_supp_beta8,
+  width = 20,
+  height = 8,
+  units = "cm"
+)
+```
+Combine 
+
+```{r}
+gwas_supp_beta3 + gwas_supp_beta8 + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/gwas_supp_est.pdf", width = 40, height = 10, units = "cm")
+
+```
+
+## Variance components
+
+### Scalar variance components
+
+```{r}
+df_true <- data.frame(y_value = 0.56) 
+
+var_gwas_scalar <- best_gwas_results %>%
+  filter(cov_str == "scalar") %>%
+  ggplot(aes(y = psi_1, x=q)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty), outlier.shape = 21)  +
+  geom_hline(data = df_true, aes(yintercept = y_value, linetype = "True Parameter")) +
+  labs(y = "Estimated parameter", x = TeX("# random effects ($q$)")) +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  
+var_gwas_scalar
+
+ggsave(
+  "../revised_plots/var_gwas_scalar.pdf",
+  var_gwas_scalar,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+### Diagonal variance components
+
+If we want to check these, we must divide the elements of $\Psi$ by the variances of the corresponding columns of $Z$ because right now, they are on the scale of the standardized covariates (when we ran GWAS simulations, we had a previous version of the code that does not convert the random effects matrix back to the original scale).
+
+As such, we have to read in the GWAS data matrices
+```{r}
+idxs = 1:100
+diag_dfs <- idxs %>% map( 
+                \(i) read_csv(paste0("../data/GWAS/random3_covdiag/data", i, ".csv"))
+                )
+
+variances <- diag_dfs %>% 
+  map(\(df) tibble(x2_var = var(df$X2), x3_var = var(df$X3))) %>%
+  list_rbind 
+variances <- variances %>%
+  mutate(data_id = paste0("data", row_number()))
+
+```
+
+
+```{r}
+df_true <- data.frame(parameter = rep(c(1, 2, 3), 2), 
+                      y_value = rep(c(3, 3, 2), 2), correlation = rep(c("No", "Yes"), each = 3))
+
+var_gwas_diag <- best_gwas_results %>%
+  filter(cov_str == "diagonal") %>%
+  left_join(variances, by = "data_id") %>%
+  mutate(true_psi1 = psi_1, true_psi5 = psi_5/x2_var, true_psi9 = psi_9/x3_var) %>%
+  pivot_longer(cols = c(true_psi1, true_psi5, true_psi9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty), outlier.shape = 21) +
+  geom_segment(data = df_true, aes(x = parameter-.4, xend = parameter+.4,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  labs(y = "Estimated parameter", x = TeX("Diagonal $\\Psi")) +
+  scale_x_discrete(labels = c( TeX("$\\Psi_{1,1}"), TeX("$\\Psi_{2,2}"), TeX("$\\Psi_{3,3}"))) +
+
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+  
+var_gwas_diag
+
+ggsave(
+  "../revised_plots/var_gwas_diag.pdf",
+  var_diag_gwas,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+### Unstructured
+
+```{r}
+idxs = 1:100
+sym_dfs <- idxs %>% map( 
+                \(i) read_csv(paste0("../data/GWAS/random3_covsym/data", i, ".csv"))
+                )
+
+sds <- sym_dfs %>% 
+  map(\(df) tibble(x2_sd = sd(df$X2), x3_sd = sd(df$X3))) %>%
+  list_rbind 
+sds <- sds %>%
+  mutate(data_id = paste0("data", row_number()))
+
+```
+
+
+```{r}
+
+Lsym <- matrix(c(sqrt(3), 0 ,0, 1, sqrt(3), 0, -sqrt(2), 1, sqrt(2)), nrow = 3, byrow = T)
+df_true <- data.frame(parameter = rep(1:9, 2), 
+                      y_value = rep(as.vector(Lsym %*% t(Lsym)), 2))
+
+var_gwas_sym <- best_gwas_results %>%
+  filter(cov_str == "unstructured") %>%
+  left_join(sds, by = "data_id") %>%
+  mutate(
+    true_psi1 = psi_1, 
+    true_psi2 = psi_2/x2_sd, 
+    true_psi3 = psi_3/x3_sd,
+    true_psi4 = psi_4/x2_sd,
+    true_psi5 = psi_5/x2_sd^2,
+    true_psi6 = psi_6/(x2_sd*x3_sd),
+    true_psi7 = psi_7/x3_sd,
+    true_psi8 = psi_8/(x2_sd*x3_sd),
+    true_psi9 = psi_9/x3_sd^2
+    ) %>%
+  pivot_longer(cols = paste0("true_psi", 1:9), 
+               names_to = "parameter", values_to = "estimate") %>%
+  ggplot(aes(parameter, estimate)) +
+  geom_boxplot(position = position_dodge(width = 0.9), aes(col = penalty), outlier.shape = 21) +
+  geom_segment(data = df_true, aes(x = parameter-.4, xend = parameter+.4,
+                                   y = y_value, yend = y_value,
+                                   linetype = "True Parameter")) +
+  scale_x_discrete(labels = c( TeX("$\\Psi_{1,1}"),
+                               TeX("$\\Psi_{1,2}"),
+                               TeX("$\\Psi_{1,3}"),
+                               TeX("$\\Psi_{2,1}"),
+                               TeX("$\\Psi_{2,2}"),
+                               TeX("$\\Psi_{2,3}"),
+                               TeX("$\\Psi_{3,1}"),
+                               TeX("$\\Psi_{3,2}"),
+                               TeX("$\\Psi_{3,3}"))) +
+  labs(y = "Estimated parameter", x = TeX("Unstructured symmetric $\\Psi")) + 
+    theme(legend.position = "top",
+        legend.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size = 18)) +
+  scale_color_brewer(type = "qual", labels = c("LASSO", "SCAD"))
+var_gwas_sym
+
+ggsave(
+  "../revised_plots/var_gwas_sym.pdf",
+  var_sym_gwas,
+  width = 20,
+  height = 15,
+  units = "cm"
+)
+```
+
+
+Combine into final plot
+
+```{r}
+(var_gwas_scalar + var_gwas_diag) / var_gwas_sym + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A') & theme(legend.position = 'bottom') 
+ggsave("../revised_plots/var_gwas_comp.pdf", width = 40, height = 30, units = "cm")
+```
+
+
+
+
+
+
+
