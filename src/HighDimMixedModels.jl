@@ -1,10 +1,15 @@
 module HighDimMixedModels
+
+using Statistics
+using Parameters #Supplies macro for structs with default field values
+using Lasso #Needed to get initial estimates of the fixed effects
+using MLBase #Supplies k-fold cross validation for initial lasso fit
+
 export lmmlasso
 export Control
 
 include("helpers.jl")
-using Parameters #Supplies macro for structs with default field values
-using MLBase #Supplies k-fold cross validation for initial lasso fit
+
 
 """
 Algorithm Hyper-parameters
@@ -195,7 +200,6 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
     control.trace > 2 && println("Cost at initialization: $fct_start")
-    println("hey")
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
@@ -262,8 +266,6 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
-            
-            println(j)
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
             cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp) 
 
@@ -368,11 +370,14 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
     #Get parameters and design matrices on the original scale 
     if standardize
+        println("Inititial β is $(βiter[2:10])")
         βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
         βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
-        
+        println("New β is $(βiter[2:10])")
         if Z_int
+            println("Inititial Lmat is $Lmat")
             Lmat = Diagonal([1; vec(1 ./ sdsz)]) * Lmat
+            println("New Lmat is $Lmat")
         else
             Lmat = Diagonal(vec(1 ./ sdsz)) * Lmat
         end

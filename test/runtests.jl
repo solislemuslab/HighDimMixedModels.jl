@@ -1,21 +1,25 @@
-using Revise
 import HighDimMixedModels as hdmm
-using Random
-using Distributions
-using LinearAlgebra
-using Lasso
-using StatsBase
 using Test
+
+using Random
+using LinearAlgebra
+
+using StatsBase
 using Optim
-using InvertedIndices
-using Parameters
-using RCall
+using Lasso
 using MLBase
 
-include("../scripts/sim_helpers.jl")
-import Main.simulations as sim
+using InvertedIndices
+using Parameters
+
+using RCall
+
+
+include("sim_helpers.jl")
+
+
 ##Include code for lmmSCAD functions
-R"source(\"../R/lmmSCAD/helpers.R\")"
+R"source(\"lmmSCAD/helpers.R\")"
 R"library(splmm)"
 R"library(emulator)"
 R"library(glmnet)"
@@ -33,7 +37,7 @@ R"control = splmmControl()"
 p = 5
 q = 3
 m = 3
-X, G, Z, grp = sim.simulate_design(p=p, q=q, m=m)
+X, G, Z, grp = simulate_design(p=p, q=q, m=m)
 g = length(unique(grp))
 N = length(grp)
 
@@ -63,7 +67,7 @@ R"sigma2 = $σ²"
 
 # Simulate y
 yfixed = X*βun + G*βpen
-y = sim.simulate_y(X, G, Z, grp, βun, βpen, L, σ²)
+y = simulate_y(X, G, Z, grp, βun, βpen, L, σ²)
 R"yfixed = $yfixed"
 R"y = $y"
 
@@ -212,7 +216,7 @@ R"LxGrp = splmm:::as1(XGgrp, invVgrp, active_set, g)"
     @rget hess_untrunc_R
     @test isapprox(hess_untrunc_R, hess_untrunc)
     for j in active_set
-        cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
+        cut = hdmm.special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp)
         R"j = $j"
         R"cut_R = splmm:::as2(XG, y, βiter_R, j, active_set, grp, LxGrp)"
         @rget cut_R
@@ -229,7 +233,7 @@ R"cut = rep(0, p+q)"
 println("Current value of  βiter is $(βiter)")
 println("Current function value is $(fct_old)")
 for j in active_set
-    cut = hdmm.special_quad(XGgrp, invVgrp, ygrp, βiter, j)
+    cut = hdmm.special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp)
     R"cut[$j] = $cut"
     arm = hdmm.armijo!(XGgrp, ygrp, invVgrp, βiter, 
     j, q, cut, hess_untrunc[j], hess[j], 
