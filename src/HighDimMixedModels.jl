@@ -370,14 +370,10 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
     #Get parameters and design matrices on the original scale 
     if standardize
-        println("Inititial β is $(βiter[2:10])")
         βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
         βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
-        println("New β is $(βiter[2:10])")
         if Z_int
-            println("Inititial Lmat is $Lmat")
             Lmat = Diagonal([1; vec(1 ./ sdsz)]) * Lmat
-            println("New Lmat is $Lmat")
         else
             Lmat = Diagonal(vec(1 ./ sdsz)) * Lmat
         end
