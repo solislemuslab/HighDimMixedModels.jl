@@ -1,3 +1,4 @@
+using Statistics
 using LinearAlgebra
 using Random
 using Optim #Needed for univariate optimization in coordinated gradient descent algorithm
