@@ -1,6 +1,5 @@
 module HighDimMixedModels
 
-using Statistics
 using Parameters #Supplies macro for structs with default field values
 using Lasso #Needed to get initial estimates of the fixed effects
 using MLBase #Supplies k-fold cross validation for initial lasso fit
