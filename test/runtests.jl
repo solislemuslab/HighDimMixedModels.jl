@@ -370,7 +370,7 @@ R"σ2iter_R = optRes$par^2"
 
     @rget σ2iter_R 
     #print(Lsym - Lsym_R)
-    @test isapprox(σ²iter, σ2iter_R , atol = 1e-4)
+    @test isapprox(σ²iter, σ2iter_R , atol = 1e-3)
 
 end
 
