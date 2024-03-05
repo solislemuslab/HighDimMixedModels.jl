@@ -25,6 +25,7 @@ cog_df.treatment = categorical(cog_df.treatment, levels=["control", "calorie", "
 
 Form the model matrices 
 ```
+using StatsModels
 f = @formula(ravens ~ 1 + schoolid + treatment + year + sex + age_at_time0 +
                       height + weight + head_circ + ses + mom_read + mom_write + mom_edu)
 mf = ModelFrame(f, cog_df)
@@ -35,6 +36,7 @@ G = mm[:, 2:end] # High dimensional covariates whose coefficients will be penali
 
 Get the cluster (in this case, student) ids, the response, and fit the model with the main function `hdmm`
 ```
+using HighDimMixedModels
 student_id = cog_df.id
 y = cog_df.ravens
 fit = hdmm(X, G, y, student_id)
