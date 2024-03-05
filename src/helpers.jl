@@ -1,9 +1,3 @@
-using Statistics
-using LinearAlgebra
-using Random
-using Optim #Needed for univariate optimization in coordinated gradient descent algorithm
-using InvertedIndices #Allows negative indexing, like in R
-
 """
 Updates precision matrices of the responses, by group
 

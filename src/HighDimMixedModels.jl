@@ -1,54 +1,31 @@
 module HighDimMixedModels
 
-using Parameters #Supplies macro for structs with default field values
-using Lasso #Needed to get initial estimates of the fixed effects
-using MLBase #Supplies k-fold cross validation for initial lasso fit
-
-export lmmlasso
-export Control
+using Statistics
+using LinearAlgebra
+using Random
+using InvertedIndices 
+using Optim: Optim, optimize
+using Parameters: @with_kw
+using MLBase: Kfold 
+import Lasso
+using StatsBase
+export 
+    Control, 
+    HDMModel, 
+    hdmm, 
+    coef, 
+    coeftable, 
+    deviance, 
+    loglikelihood, 
+    nobs, 
+    residuals, 
+    fitted, 
+    aic, 
+    bic
 
 include("helpers.jl")
-
-
-"""
-Algorithm Hyper-parameters
-
-- tol :: Convergence tolerance
-- seed :: Random seed for cross validation for estimating initial fixed effect parameters using Lasso
-- trace :: Integer. 1 prints no output, 2 prints issues, and 3 prints the objective function values during the algorithm and issues
-- max_iter :: Integer. Maximum number of iterations
-- max_armijo :: Integer. Maximum number of steps in Armijo rule algorithm. If the maximum is reached, algorithm doesn't update current coordinate and proceeds to the next coordinate
-- act_num :: Integer between 1 and 5. We will only update all fixed effect parameters every act_num iterations. Otherwise, we update only the parameters in thea current active set.
-- a₀ :: a₀ in the Armijo step. See Schelldorfer et al. (2010)
-- δ :: δ in the Armijo step. See Schelldorfer et al. (2010)
-- ρ :: ρ in the Armijo step. See Schelldorfer et al. (2010)
-- γ :: γ in the Armijo step. See Schelldorfer et al. (2010)
-- lower :: Lower bound for the Hessian
-- upper :: Upper bound for the Hessian
-- var_int :: Tuple with bounds of interval on which to optimize the variance parameters used in `optimize` function. See Optim.jl in section "minimizing a univariate function on a bounded interval"
-- cov_int :: Tuple with bounds of interval on which to optimize the covariance parameters used in `optimize` function. See Optim.jl in section "minimizing a univariate function on a bounded interval"
-- optimize_method :: Symbol denoting method for performing the univariate optimization, either :Brent or :GoldenSection
-- thres :: If variance or covariance parameter has smaller absolute value than `thres`, parameter is set to 0
-"""
-@with_kw mutable struct Control
-    tol::Float64 = 1e-4
-    seed::Int = 770
-    trace::Int = 2
-    max_iter::Int = 1000
-    max_armijo::Int = 20
-    act_num::Int = 5
-    ainit::Float64 = 1.0
-    δ::Float64 = 0.1
-    ρ::Float64 = 0.001
-    γ::Float64 = 0.0
-    lower::Float64 = 1e-6
-    upper::Float64 = 1e8
-    var_int::Tuple{Float64,Float64} = (0, 100)
-    cov_int::Tuple{Float64,Float64} = (-5, 5)
-    optimize_method::Symbol = :Brent
-    thres::Float64 = 1e-4
-end
-
+include("structs.jl")
+include("statsbase.jl")
 
 """
 Fits penalized linear mixed effect model 
@@ -77,8 +54,8 @@ fixed effect parameters. Then, the random effect parameters are initialized as M
 OUTPUT
 - Fitted model
 """
-function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64}, 
-    grp::Vector{<:Union{String, Int64}}, Z::Matrix{Float64}=X;
+function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real}, 
+    grp::Vector{<:Union{String, Int64}}, Z::Matrix{<:Real}=X;
     standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, 
     wts::Union{Vector, Nothing}=nothing, init_coef::Union{Vector,Nothing}=nothing, 
     ψstr::String="diag", control::Control=Control())
@@ -171,9 +148,9 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     # ---------------------------------------------
     if init_coef === nothing
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = fit(LassoModel, XG[:, Not(1)], y; maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/pull/44
-            penalty_factor=[zeros(q - 1); 1 ./ wts], select=MinCVmse(Kfold(N, 10)))
-        βstart = coef(lassopath) #Fixed effects
+        lassopath = Lasso.fit(Lasso.LassoModel, XG[:, Not(1)], y; maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/pull/44
+            penalty_factor=[zeros(q - 1); 1 ./ wts], select=Lasso.MinCVmse(Kfold(N, 10)))
+        βstart = Lasso.coef(lassopath) #Fixed effects
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)
     else
@@ -394,7 +371,7 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
 
     #Fitted values and residuals
     fittedgrp = [XGᵢ * βiter + Zᵢ * bᵢ for (XGᵢ, Zᵢ, bᵢ) in zip(XGgrp, Zgrp, b)]
-    fitted = similar(y)
+    fitted = Vector{Float64}(undef, N)
     for (i, group) in enumerate(unique(grp))
         fitted[grp.==group] = fittedgrp[i]
     end
@@ -420,13 +397,11 @@ function lmmlasso(X::Matrix{Float64}, G::Matrix{Float64}, y::Vector{Float64},
     aic = deviance + 2 * npar
     bic = deviance + log(N) * npar
 
-
     #Return
-    out = (data=(X=X, G=G, Z=Z, y=y, grp=grp), weights=wts, 
-        init_coef=(βstart=βstart, Lstart=Lstart, σ²start=σ²start), init_log_like=-neglike_start, init_objective=fct_start,
-        init_nz=nz_start, penalty=penalty, λ=λ, scada=scada, σ²=σ²iter, L=Lmat, fixef=βiter, ranef=b, fitted=fitted,
-        resid=resid, log_like=-neglike_iter, objective=fct_iter, npar=npar, nz=nz, deviance=deviance, arm_con=arm_con,
-        num_arm = num_arm, aic=aic, bic=bic, iterations=counter, ψstr=ψstr, ψ=Lmat * Lmat', control=control)
+    out = HDMModel((X=X, G=G, Z=Z, y=y, grp=grp), wts, (βstart=βstart, Lstart=Lstart, σ²start=σ²start), 
+                -neglike_start, fct_start, nz_start, penalty,  λ, scada, σ²iter, Lmat, βiter, b, fitted,
+                resid, -neglike_iter, fct_iter, npar, nz, deviance,  arm_con,
+                num_arm, aic,  bic, counter,  ψstr, Lmat * Lmat', control)
 
     return out
 
