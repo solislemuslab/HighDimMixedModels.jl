@@ -7,8 +7,8 @@ using InvertedIndices
 using Optim: Optim, optimize
 using Parameters: @with_kw
 using MLBase: Kfold 
-import Lasso
-using StatsBase
+using Lasso: Lasso
+using StatsAPI
 export 
     Control, 
     HDMModel, 
@@ -148,8 +148,10 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     # ---------------------------------------------
     if init_coef === nothing
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = Lasso.fit(Lasso.LassoModel, XG[:, Not(1)], y; maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/pull/44
-            penalty_factor=[zeros(q - 1); 1 ./ wts], select=Lasso.MinCVmse(Kfold(N, 10)))
+        lassopath = Lasso.fit(Lasso.LassoModel, XG[:, Not(1)], y; 
+                                maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/issues/54
+                                penalty_factor=[zeros(q - 1); 1 ./ wts], 
+                                select=Lasso.MinCVmse(Kfold(N, 10)))
         βstart = Lasso.coef(lassopath) #Fixed effects
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)

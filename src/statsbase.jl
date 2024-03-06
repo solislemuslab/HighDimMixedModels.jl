@@ -1,16 +1,18 @@
-# Classes and functions for model inspection
-StatsBase.coef(fit::HDMModel) = fit.fixef
+# Extending generics from StatsAPI to HDMModel
+# These are functions for inspecting a fitted model
 
-function StatsBase.coeftable(fit::HDMModel, names::Vector{String}=string.(1:length(fit.fixef))) 
+StatsAPI.coef(fit::HDMModel) = fit.fixef
+
+function StatsAPI.coeftable(fit::HDMModel, names::Vector{String}=string.(1:length(fit.fixef))) 
     fixef = StatsBase.coef(fit)
     nz = findall(fixef .!= 0)
     StatsBase.CoefTable([fixef[nz]], ["Estimate"], names[nz])
 end
 
-StatsBase.deviance(fit::HDMModel) = fit.deviance
-StatsBase.loglikelihood(fit::HDMModel) = fit.log_like
-StatsBase.nobs(fit::HDMModel) = length(fit.fitted)
-StatsBase.residuals(fit::HDMModel) = fit.resid
-StatsBase.fitted(fit::HDMModel) = fit.fitted
-StatsBase.aic(fit::HDMModel) = fit.aic
-StatsBase.bic(fit::HDMModel) = fit.bic
+StatsAPI.deviance(fit::HDMModel) = fit.deviance
+StatsAPI.loglikelihood(fit::HDMModel) = fit.log_like
+StatsAPI.nobs(fit::HDMModel) = length(fit.fitted)
+StatsAPI.residuals(fit::HDMModel) = fit.resid
+StatsAPI.fitted(fit::HDMModel) = fit.fitted
+StatsAPI.aic(fit::HDMModel) = fit.aic
+StatsAPI.bic(fit::HDMModel) = fit.bic
