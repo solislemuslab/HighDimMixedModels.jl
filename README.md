@@ -18,15 +18,14 @@ using CSV
 using DataFrames
 using CategoricalArrays
 cog_df = CSV.read("data/cognitive.csv", DataFrame)
-# form categorical variable
-cog_df.schoolid = categorical(cog_df.schoolid)
+# form categorical variable for treatment
 cog_df.treatment = categorical(cog_df.treatment, levels=["control", "calorie", "meat", "milk"]) 
 ```
 
 Form the model matrices 
 ```
 using StatsModels
-f = @formula(ravens ~ 1 + schoolid + treatment + year + sex + age_at_time0 +
+f = @formula(ravens ~ 1 + treatment + year + sex + age_at_time0 +
                       height + weight + head_circ + ses + mom_read + mom_write + mom_edu)
 mf = ModelFrame(f, cog_df)
 mm = ModelMatrix(mf).m
