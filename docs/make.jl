@@ -10,5 +10,5 @@ makedocs(
                 "Home" => "index.md"
                ])
 deploydocs(;
-    repo="github.com/solislemuslab/HighDimMixedModels.jl",
+    repo="github.com/solislemuslab/HighDimMixedModels.jl.git"
 )
