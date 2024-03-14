@@ -70,3 +70,16 @@ mutable struct HDMModel
     ψ::Matrix
     control::Control
 end
+
+
+function Base.show(io::IO, ::MIME"text/plain", obj::HDMModel)
+    println(io, "HDMModel fit with $(length(obj.fitted)) observations")
+    println(io, "Log-likelihood at convergence: $(round(obj.log_like, sigdigits=5))")
+    println(io,"Random effect covariance matrix:")
+    show(io, "text/plain", obj.ψ)
+    println(io)
+    println(io, "Estimated $(obj.nz) non-zero fixed effects:")
+    show(io, coeftable(obj))
+    println(io)
+    println(io, "Estimated σ²: $(round(obj.σ², sigdigits=5))")
+end

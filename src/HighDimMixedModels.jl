@@ -1,5 +1,6 @@
 module HighDimMixedModels
 
+# Dependencies
 using Statistics
 using LinearAlgebra
 using Random
@@ -8,20 +9,14 @@ using Optim: Optim, optimize
 using Parameters: @with_kw
 using MLBase: Kfold 
 using Lasso: Lasso
-using StatsAPI
-export 
-    Control, 
-    HDMModel, 
-    hdmm, 
-    coef, 
-    coeftable, 
-    deviance, 
-    loglikelihood, 
-    nobs, 
-    residuals, 
-    fitted, 
-    aic, 
-    bic
+using StatsBase: StatsBase
+
+# Export the two structs and the main function defined in this package
+export Control, HDMModel, hdmm
+
+# Methods are defined for the functions from the StatsAPI in the file statsbase.jl
+import StatsAPI: coef, coeftable, deviance, loglikelihood, nobs, residuals, fitted, aic, bic
+export coef, coeftable, deviance, loglikelihood, nobs, residuals, fitted, aic, bic
 
 include("helpers.jl")
 include("structs.jl")
