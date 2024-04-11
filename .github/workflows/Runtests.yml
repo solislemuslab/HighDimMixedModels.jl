@@ -14,9 +14,9 @@ jobs:
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           cache-version: 2
-          extra-packages: 
-            CRAN::splmm
-            CRAN::glmnet 
+          extra-packages: |
+            any::ggplot2
+            any::rcmdcheck 
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
