@@ -26,14 +26,14 @@ nothing #hide
 Next we form model matrices with the help of the [`StatsModels`](https://juliastats.org/StatsModels.jl/stable/formula/#The-@formula-language) formula syntax:
 ```@example cog
 using StatsModels
-f = @formula(ravens ~ 1 + treatment + year + sex + age_at_time0 +
+f = @formula(ravens ~ 1 + year + treatment + sex + age_at_time0 +
                       height + weight + head_circ + ses + mom_read + mom_write + mom_edu)
 model_frame = ModelFrame(f, cog_df)
 model_mat = ModelMatrix(model_frame).m
 nothing #hide
 ```
 
-We form two model matrices. One is low dimensional and includes only the columns that will have associated random effects and the other is higher dimensional and includes the many features whose effects will be regularized. 
+We form two model matrices. One is low dimensional and includes features we do not wish to penalize, and the other is higher dimensional and includes the many features whose effects will be regularized. 
 ```@example cog
 X = model_mat[:, 1:2] # Non-penalized, random effect columns (one for intercept, and the other for year)
 G = model_mat[:, 3:end] # High dimensional set of covariates whose effects are regularized
@@ -48,9 +48,9 @@ y = cog_df.ravens
 fit = hdmm(X, G, y, student_id)
 ```
 
-Note that by default, we fit a model with the SCAD penalty. To apply the LASSO penalty, simply specify `penalty = "lasso"` in the call to fit the model. 
+Note that by default, we fit a model with the SCAD penalty, which produces less bias. To apply the LASSO penalty, simply specify `penalty = "lasso"` in the call to `hdmm()`. Also note that the default value of $\lambda$ (the hyperparameter that controls the degree of penalization) is 10. Since the default (unless `standardize = false`) is to standardize the design matrices before running the algorithm, this is how much the coefficients of the standardized predictors are penalized. In practice, you can and should try fitting the model for several different choices of $\lambda$ and choose the fit that leads to the lowest `fit.BIC`.
 
-By default, the features that are assigned random slopes are all those that appear as columns in the matrix `X`, i.e. those whose coefficients in the model are not penalized. In the above code, `X` just contains a single constant column, so we are fitting a model with just random intercepts. It's possible, however, to include additional columns in `X`. If you do so, each corresponding feature will receive a random slopes, by default. If you wish to include a feature whose coefficient is not penalized, but do not wish to assign this feature a random slope, then you can specify the argument `Z` in the call to `hdmm` to be a matrix whose columns contain only the variables in `X` that you wish to assign random slopes.
+By default, the features that are assigned random slopes are all those that appear as columns in the matrix `X`, i.e. those features whose coefficients are not penalized. If you wish to include a feature whose coefficient is not penalized, but do not wish to assign this feature a random slope, then you can specify the argument `Z` in the call to `hdmm` to be a matrix whose columns contain only the variables in `X` that you wish to assign random slopes.
 
 We can inspect the model using common extraction functions from [StatsBase.jl](https://github.com/JuliaStats/StatsBase.jl/tree/master). For example, to get the residuals and fitted values,
 ```@repl cog
