@@ -14,9 +14,8 @@ jobs:
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           cache-version: 2
-          extra-packages: |
-            any::splmm
-            any::glmnet 
+          extra-packages: splmm
+          glmnet 
       - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.julia-version }}
