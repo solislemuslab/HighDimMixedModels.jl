@@ -1,5 +1,6 @@
 # HighDimMixedModels
 [![Documenter](https://github.com/solislemuslab/HighDimMixedModels.jl/actions/workflows/Documenter.yml/badge.svg)](https://github.com/solislemuslab/HighDimMixedModels.jl/actions/workflows/Documenter.yml) [![Runtests](https://github.com/solislemuslab/HighDimMixedModels.jl/actions/workflows/Runtests.yml/badge.svg)](https://github.com/solislemuslab/HighDimMixedModels.jl/actions/workflows/Runtests.yml)
+[![codecov](https://codecov.io/github/solislemuslab/HighDimMixedModels.jl/graph/badge.svg?token=BAF8P78SUS)](https://codecov.io/github/solislemuslab/HighDimMixedModels.jl)
 
 HighDimMixedModels.jl is a package for fitting penalized linear mixed-effect models. It is a Julia implementation of the coordinate gradient descent algorithm proposed in
 
