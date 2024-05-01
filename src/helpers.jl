@@ -109,7 +109,7 @@ OUTPUT
 """
 function cov_start(XGgrp, ygrp, Zgrp, β)
     
-    # It can be shown that if we know η = sqrt(Ψ/σ²) and β, the MLE for σ² is 
+    # It can be shown that if we know η = sqrt(Ψ/σ²) = L/σ and β, the MLE for σ² is 
     # given by the below function
 
     function σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp) 
@@ -120,8 +120,9 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
         return(σ²)
     end
     
-    # We can now profile the likelihood and optimize with respect to η 
-    function like(η, invṼgrp, invVgrp)
+    # We can now profile the likelihood and optimize with respect to γ = log(η) 
+    function like(γ, invṼgrp, invVgrp)
+        η = exp(γ)
         σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp)
         L = η*sqrt(σ²)
         invV!(invVgrp, Zgrp, L, σ²)
@@ -129,16 +130,17 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
     end
 
     g = length(Zgrp)
-    profile(η) = like(η, Vector{Matrix}(undef, g), Vector{Matrix}(undef, g))
+    profile(γ) = like(γ, Vector{Matrix}(undef, g), Vector{Matrix}(undef, g))
 
-    result = optimize(profile, 1.0e-6, 1.0e6) #will need to fix
+    result = optimize(profile, -10, 10) #Hard coded interval of optimization for now
     
     if Optim.converged(result)
-        η = Optim.minimizer(result)
+        γ = Optim.minimizer(result)
+        η = exp(γ)
     else
         error("Convergence for η not reached")
     end
-
+    
     σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, Vector{Matrix}(undef, g))
     L = η*sqrt(σ²)
     return L, σ²

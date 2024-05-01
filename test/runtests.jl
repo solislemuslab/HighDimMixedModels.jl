@@ -375,28 +375,23 @@ R"σ2iter_R = optRes$par^2"
 end
 
 
+##### Now let's test the full algorithm #######
+control.trace = 3
+mod_fit1 = hdmm.hdmm(X, G, y, grp; control)
+mod_fit2 = hdmm.hdmm(X, G, y, grp; λ = 1, control, penalty = "lasso")
+mod_fit3 = hdmm.hdmm(X, G, y, grp; λ = 1, control)
+mod_fit4 = hdmm.hdmm(X, G, y, grp; λ = 1, control, ψstr = "sym")
+
+@testset "full algorithm" begin
+    
+    @test hdmm.nobs(mod_fit1) == length(y)
+    @test isa(mod_fit1.ψ, Matrix)
+    @test sum(mod_fit2.fixef .!= 0) == mod_fit2.nz
+    @test hdmm.coef(mod_fit1) == mod_fit1.fixef
+    @test isa(hdmm.coeftable(mod_fit1), StatsBase.CoefTable)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+end
 
 
 

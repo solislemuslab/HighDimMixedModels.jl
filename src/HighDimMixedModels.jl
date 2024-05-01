@@ -23,39 +23,55 @@ include("structs.jl")
 include("statsbase.jl")
 
 """
-Fits penalized linear mixed effect model 
+    hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real}, 
+        grp::Vector{<:Union{String, Int64}}, Z::Matrix{<:Real}=X;
+        standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, 
+        wts::Union{Vector, Nothing}=nothing, init_coef::Union{Vector,Nothing}=nothing, 
+        ψstr::String="diag", control::Control=Control())
 
-ARGUMENTS
+Main function for the package. Fits a penalized linear mixed effect model using the coordinate gradient descent algorithm.
+
+# Arguments
+
 Positional: 
-- X :: Low dimensional design matrix for unpenalized fixed effects (assumed to include column of ones) (REQUIRED)
-- G :: High dimensional design matrix for penalized fixed effects (assumed to not include column of ones) (REQUIRE)
-- y :: Vector of responses (REQUIRED)
-- grp :: Vector of strings of same length as y assigning each observation to a particular group (REQUIRED)
-- Z :: Design matrix for random effects (default is all columns of X)
-NOTE: Z is not expected to be given in block diagonal form. It should be a vertical stack of subject design matrices Z₁, Z₂, ...
+- `X`: Low dimensional (N by q) design matrix for unpenalized fixed effects (**first column must be 1's to fit intercept**) 
+- `G`: High dimensional (N by p) design matrix for penalized fixed effects (should not include column of 1's) 
+- `y`: Response vector
+- `grp`: Vector of either strings or integers with group assignments of each observation 
+- `Z`: Design matrix (N by m) for random effects, defaults to equal `X`
 
 Keyword:
-- standardize :: boolean (default true), whether to standardize design matrices before performing algorithm. 
-- penalty :: One of "scad" (default) or "lasso"
-- λ :: Positive regularizing penalty (default is 10.0)
-- scada :: Extra tuning parameter for the SCAD penalty (default is 3.7, ignored if penalty is "lasso"
-- wts :: Vector of length number of penalized coefficients. Strength of penalty on covariate j is λ/wⱼ (Default is vector of 1's)
-- init_coef :: Named tuple of form (β, L, σ²) giving initial values for parameters. If unspecified, then inital values for parameters are 
-calculated as follows: first, cross-validated LASSO that ignores grouping structure is performed to obtain initial estimates of the 
-fixed effect parameters. Then, the random effect parameters are initialized as MLEs assuming the LASSO estimates are true fixed effect parameters.
-- ψstr :: One of "diag" (default), "ident", or "sym", specifying covariance structure of random effects 
-- control :: Struct with fields for hyperparameters of the algorithm 
+- `penalty`: String, one of "scad" (default) or "lasso"
+- `λ`: Positive number, default=10, providing the regularization parameter for the penalty
+- `scada`: Positive number, default=3.7, providing the extra tuning parameter for the SCAD penalty (ignored if penalty is "lasso")
+- `standardize`: Boolean, deault=true, whether to standardize the columns of all design matrices before performing coordinate descent. Note that the value of λ should be chosen accordingly. Results will always be returned on the original scale
+- `wts`: Vector of length p, default is vector of 1's. The penalty on covariate j will be λ/wⱼ, so this argument is useful if you want to penalize some covariates more than others. 
+- `ψstr`: String, one of "diag" (default), "ident", or "sym", specifying covariance structure of the random effects 
+- `init_coef`: Named tuple of form (β, L, σ²), where 
+    - β is a vector of length p + q providing an initial estimate of the fixed effect coefficients
+    - L is the Cholesky factor of the random effect covariance matrix, and is represented as 
+        - a scalar if ψstr="ident"
+        - a vector of length m if ψstr="diag"
+        - a lower triangular matrix of size m by m if ψstr="sym"
+    - σ² is a scalar providing an initial estimate of the noise variance
+    See below for how these inital parameter estimates are calculated if not provided.
+- `control`: Custom struct with fields for hyperparameters of the algorithm, defaults are in documentation of `Control` struct
 
-OUTPUT
-- Fitted model
+If the `init_coef` argument is not specified, we perform the following steps to obtain the initial parameters to feed to the coordinate descent algorithm:
+1. First, a LASSO (with λ chosen using cross validation) that ignores random effects is performed to estimate the fixed effect parameters. 
+2. Then, L, assumed for the moment to be a scalar, and σ² are estimated to maximize the likelihood given the estimated fixed effect parameters.
+3. Finally, if `ψstr` is "diag" or "sym", the scalar L is converted to a vector or matrix by repeating the scalar or filling the diagonal of a matrix with the scalar, respectively.
+
+# Returns
+Fitted model object of type `HDMModel` with fields for all relevant information about the model fit.
 """
 function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real}, 
     grp::Vector{<:Union{String, Int64}}, Z::Matrix{<:Real}=X;
-    standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, 
-    wts::Union{Vector, Nothing}=nothing, init_coef::Union{Vector,Nothing}=nothing, 
-    ψstr::String="diag", control::Control=Control())
+    penalty::String="scad", λ::Real=10.0, scada::Real=3.7, standardize=true, 
+    wts::Union{Vector, Nothing}=nothing, ψstr::String="diag", 
+    init_coef::Union{Vector,Nothing}=nothing, control::Control=Control())
 
-    ##Get dimensions
+    #Get dimensions
     N = length(y) # Total number of observations
     p = size(G, 2) # Number of penalized covariates 
     q = size(X, 2) # Number of unpenalized covariates 
@@ -76,9 +92,7 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
 
     #Intercept included check
     @assert X[:, 1] == ones(N) "First column of X must be all ones"
-    Z_int = (Z[:, 1] == ones(N)) #Bool for whether Z includes intercept (i.e. whether there's a random intercept)
-
-    #Check whether columns of Z are a subset of the columns of X, or is this not necessary?
+    Z_int = (Z[:, 1] == ones(N)) #Bool for whether Z includes intercept (i.e. whether we want random intercepts)
 
     #Penalty related checks
     @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
@@ -118,7 +132,7 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
         XG = [fill(1, N) XG]
 
         Zor = copy(Z)
-        if Z_int 
+        if Z_int # If first column of Z is an intercept
             meansz = mean(Z[:, Not(1)], dims=1)
             sdsz = std(Z[:, Not(1)], dims=1)
             Z = (Z[:, Not(1)] .- meansz) ./ sdsz
@@ -147,24 +161,21 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
                                 maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/issues/54
                                 penalty_factor=[zeros(q - 1); 1 ./ wts], 
                                 select=Lasso.MinCVmse(Kfold(N, 10)))
-        βstart = Lasso.coef(lassopath) #Fixed effects
+        βstart = Lasso.coef(lassopath) 
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)
+        #Get L in form specified by ψstr
+        if ψstr == "sym"
+            Lstart = Matrix(Lstart * I(m))
+        elseif ψstr == "diag"
+            Lstart = fill(Lstart, m)
+        end
     else
         βstart, Lstart, σ²start = init_coef
     end
 
     #Number of non-zeros in initial fixed-effect estimates 
     nz_start = sum(βstart .!= 0)
-
-    #Get L in form specified by ψstr
-    if ψstr == "sym"
-        Lstart = Matrix(Lstart * I(m))
-    elseif ψstr == "diag"
-        Lstart = fill(Lstart, m)
-    elseif ψstr != "ident"
-        error("ψstr must be one of \"sym\", \"diag\", or \"ident\"")
-    end
 
     # --- Calculate cost for the starting values ---
     # ---------------------------------------------
