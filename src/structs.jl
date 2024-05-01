@@ -40,7 +40,7 @@ Provides hyperparameters for the coordinate descent algorithm.
 end
 
 """
-Fitted model object 
+Stores the results of a fitted model
 """
 mutable struct HDMModel 
     data::NamedTuple
