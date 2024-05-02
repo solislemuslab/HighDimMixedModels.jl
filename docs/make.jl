@@ -10,7 +10,7 @@ makedocs(
                 "Home" => "index.md",
                 "Manual" =>  [
                     "Installation" => "man/installation.md",
-                    "Input Data" => "man/inputdata.md",
+                    "Input Data" => "man/input_data.md",
                     "Model Fitting" => "man/model_fit.md",
                 ],
                 "Library" => [
