@@ -11,7 +11,7 @@ using CategoricalArrays
 cog_df = CSV.read("../data/cognitive.csv", DataFrame)
 # form categorical variable for treatment
 cog_df.treatment = categorical(cog_df.treatment, levels=["control", "calorie", "meat", "milk"])
-nothing #hide
+nothing #hide output
 ```
 
 ## Extract model matrices, cluster ids, and response vector
@@ -23,32 +23,33 @@ f = @formula(ravens ~ 1 + year + treatment + sex + age_at_time0 +
                       height + weight + head_circ + ses + mom_read + mom_write + mom_edu)
 model_frame = ModelFrame(f, cog_df)
 model_mat = ModelMatrix(model_frame).m
-nothing #hide
+nothing 
 ```
 
 We form two model matrices. One is low dimensional and includes features we do not wish to penalize, and the other is higher dimensional and includes the many features whose effects will be regularized. 
 ```@example cog
 X = model_mat[:, 1:2] # Non-penalized, random effect columns (one for intercept, and the other for year)
 G = model_mat[:, 3:end] # High dimensional set of covariates whose effects are regularized
-nothing #hide
+nothing 
 ```
-Finally, we get the cluster (in this case, student) ids and the response, the students' Ravens test scores, and fit the model with the main function from the package, `hdmm`:
+Finally, we get the cluster (in this case, student) ids and the response, the students' Ravens test scores. 
 
 ```@example cog
 using HighDimMixedModels
 student_id = cog_df.id
 y = cog_df.ravens
+nothing 
 ```
 
 
 ## Fitting model
-
-To fit a regularized mixed effect model with the package, simply run
+The main function in the package is `hdmm()`, which requires the two design matrices, the response, and the group id as required positional arguments, and returns the fitted model:
 ```@example cog
+using HighDimMixedModels
 fit = hdmm(X, G, y, student_id)
 ```
 
-This function has a number of keyword arguments that can be specified to modify the defaults--see the [documentation](https://solislemuslab.github.io/HighDimMixedModels.jl/dev/#HighDimMixedModels.hdmm). For example, by default, we fit a model with the SCAD penalty, which produces less bias. To apply the LASSO penalty, specify `penalty = "lasso"` in the call. Also note that the default value of $\lambda$ (the hyperparameter that controls the degree of penalization) is 10. Since the default (unless `standardize = false`) is to standardize the design matrices before running the algorithm, this is how much the coefficients of the standardized predictors are penalized. In practice, you can and should try fitting the model for several different choices of $\lambda$ and choose the fit that leads to the lowest `fit.BIC`.
+The function has a number of keyword arguments that can be specified to modify the defaults--see the [documentation](https://solislemuslab.github.io/HighDimMixedModels.jl/dev/#HighDimMixedModels.hdmm). For example, by default, we fit a model with the SCAD penalty, which produces less bias. To apply the LASSO penalty, specify `penalty = "lasso"` in the call. Also note that the default value of $\lambda$ (the hyperparameter that controls the degree of penalization) is 10. Since the default (unless `standardize = false`) is to standardize the design matrices before running the algorithm, this is how much the coefficients of the standardized predictors are penalized. In practice, you can and should try fitting the model for several different choices of $\lambda$ and choose the fit that leads to the lowest `fit.BIC`.
 
 By default, the features that are assigned random slopes are all those that appear as columns in the matrix `X`, i.e. those features whose coefficients are not penalized. If you wish to include a feature whose coefficient is not penalized, but do not wish to assign this feature a random slope, then you can specify the argument `Z` in the call to `hdmm` to be a matrix whose columns contain only the variables in `X` that you wish to assign random slopes.
 
