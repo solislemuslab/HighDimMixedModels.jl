@@ -25,7 +25,7 @@ See the [package documentation](https://solislemuslab.github.io/HighDimMixedMode
 
 To report a bug or propose a new feature, please open an issue in the [issue tracker](https://github.com/solislemuslab/HighDimMixedModels.jl/issues). 
 
-We welcome contributions. User who are interested in contributing code are asked to follow the instructions found in [CONTRIBUTIONS.md](https://github.com/solislemuslab/HighDimMixedModels.jl/blob/main/CONTRIBUTIONS.md)
+We welcome contributions. User who are interested in contributing code are asked to follow the instructions found in [CONTRIBUTING.md](https://github.com/solislemuslab/HighDimMixedModels.jl/blob/main/CONTRIBUTING.md)
 
 
 ## Citation
