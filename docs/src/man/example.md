@@ -44,7 +44,7 @@ y = cog_df.ravens
 ## Fitting model
 
 To fit a regularized mixed effect model with the package, simply run
-```
+```@example cog
 fit = hdmm(X, G, y, student_id)
 ```
 
