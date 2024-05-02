@@ -8,13 +8,12 @@ makedocs(
          modules  = [HighDimMixedModels],
          pages=[
                 "Home" => "index.md",
-                "Manual" =>  [
-                    "Installation" => "man/installation.md",
-                    "Input Data" => "man/input_data.md",
-                    "Model Fitting" => "man/model_fit.md",
+                "Manual" =>  ["Installation" => "man/installation.md",
+                                "Example" => "man/example.md"
                 ],
                 "Library" => [
-                   "Public Methods and Types" => "lib/public_methods.md"
+                   "Public Methods and Types" => "lib/public_methods.md",
+                     "Internal Methods and Types" => "lib/internal_methods.md",
                 ]
                ])
 deploydocs(;
