@@ -1,4 +1,4 @@
 ```@autodocs
 Modules = [HighDimMixedModels]
-Private = false
+Public = false
 ```
