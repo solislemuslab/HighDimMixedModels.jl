@@ -8,7 +8,7 @@ First, we load the data into Julia and form a categorical variable for the treat
 using CSV
 using DataFrames
 using CategoricalArrays
-cog_df = CSV.read("data/cognitive.csv", DataFrame)
+cog_df = CSV.read("../data/cognitive.csv", DataFrame)
 # form categorical variable for treatment
 cog_df.treatment = categorical(cog_df.treatment, levels=["control", "calorie", "meat", "milk"])
 nothing #hide
