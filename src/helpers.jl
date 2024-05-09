@@ -112,7 +112,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
     # It can be shown that if we know η = sqrt(Ψ/σ²) = L/σ and β, the MLE for σ² is 
     # given by the below function
 
-    function σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp) 
+    function σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp)::Float64 
         invV!(invṼgrp, Zgrp, η, 1)
         residgrp = [y-XG*β for (y, XG) in zip(ygrp, XGgrp)]
         quadgrp = [resid'*invṼ*resid for (resid, invṼ) in zip(residgrp, invṼgrp)]
@@ -121,7 +121,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
     end
     
     # We can now profile the likelihood and optimize with respect to γ = log(η) 
-    function like(γ, invṼgrp, invVgrp)
+    function like(γ, invṼgrp, invVgrp)::Float64
         η = exp(γ)
         σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, invṼgrp)
         L = η*sqrt(σ²)
@@ -130,9 +130,11 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
     end
 
     g = length(Zgrp)
-    profile(γ) = like(γ, Vector{Matrix}(undef, g), Vector{Matrix}(undef, g))
+    function profile(γ::Float64)::Float64 
+        like(γ, Vector{Matrix{Float64}}(undef, g), Vector{Matrix{Float64}}(undef, g))
+    end
 
-    result = optimize(profile, -10, 10) #Hard coded interval of optimization for now
+    result = optimize(profile, -10.0, 10.0) #Hard coded interval of optimization for now
     
     if Optim.converged(result)
         γ = Optim.minimizer(result)
@@ -141,7 +143,7 @@ function cov_start(XGgrp, ygrp, Zgrp, β)
         error("Convergence for η not reached")
     end
     
-    σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, Vector{Matrix}(undef, g))
+    σ² = σ²hat!(XGgrp, ygrp, Zgrp, β, η, Vector{Matrix{Float64}}(undef, g))
     L = η*sqrt(σ²)
     return L, σ²
 
@@ -283,8 +285,8 @@ function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
 
     L_lb, L_ub = var_int
     g = length(Zgrp)
-    
-    function profile(L) 
+
+    function profile(L::Float64)::Float64 
         invVgrp = Vector{Matrix}(undef, g)
         invV!(invVgrp, Zgrp, L, σ²)
         get_negll(invVgrp, ygrp, XGgrp, β)
@@ -292,10 +294,10 @@ function L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
     result = optimize(profile, L_lb, L_ub, show_trace = false) 
     
     Optim.converged(result) || error("Minimization with respect to L failed to converge")
-    min = Optim.minimizer(result)
+    min = result.minimizer 
 
-    if min < thres
-        L = 0
+    if Float64(min) < thres
+        L = zero(eltype(min))
         println("L was set to 0 (no group variation)")
     else
         L = min

@@ -145,7 +145,7 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     end
 
     #Get grouped data, i.e. lists of matrices/vectors
-    Zgrp, XGgrp, ygrp = Matrix[], Matrix[], Vector[]
+    Zgrp, XGgrp, ygrp = Matrix{eltype(Z)}[], Matrix{eltype(XG)}[], Vector{eltype(y)}[]
     for group in unique(grp)
         Zᵢ, XGᵢ, yᵢ = Z[grp.==group, :], XG[grp.==group, :], y[grp.==group]
         push!(Zgrp, Zᵢ)
@@ -179,7 +179,7 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
 
     # --- Calculate cost for the starting values ---
     # ---------------------------------------------
-    invVgrp = Vector{Matrix}(undef, g)
+    invVgrp = Vector{Matrix{Float64}}(undef, g)
     invV!(invVgrp, Zgrp, Lstart, σ²start)
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
