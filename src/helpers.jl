@@ -318,7 +318,7 @@ function L_diag_update!(L, XGgrp, ygrp, Zgrp, β, σ², s, var_int, thres)
     
     g = length(Zgrp)
     #Function to optimize
-    function profile(x)
+    function profile(x::Float64)::Float64
         L[s] = x 
         invVgrp = Vector{Matrix}(undef, g)
         invV!(invVgrp, Zgrp, L, σ²)
@@ -354,7 +354,7 @@ function L_sym_update!(L, XGgrp, ygrp, Zgrp, β, σ², coords, var_int, cov_int,
     int = coords[1]==coords[2] ? var_int : cov_int 
     g = length(Zgrp)
     #Function to optimize
-    function profile(x)
+    function profile(x::Float64)::Float64
         L[coords[1], coords[2]] = x 
         invVgrp = Vector{Matrix}(undef, g)
         invV!(invVgrp, Zgrp, L, σ²)
@@ -383,7 +383,7 @@ Update of σ²
 function σ²update(XGgrp, ygrp, Zgrp, β, L, var_int)
    
     #Decision variable will be σ² rather than σ
-    function profile(σ²) 
+    function profile(σ²::Float64)::Float64 
         invVgrp = Vector{Matrix}(undef, length(Zgrp))
         invV!(invVgrp, Zgrp, L, σ²)
         get_negll(invVgrp, ygrp, XGgrp, β)
