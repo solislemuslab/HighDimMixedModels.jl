@@ -21,7 +21,7 @@ faster. Trying out toy examples for the first calls is a good idea.
 To install `HighDimMixedModels`, type in the Julia REPL
 ```julia
 ]
-add https://github.com/solislemuslab/HighDimMixedModels.jl.git
+add HighDimMixedModels
 ```
 
 The installation can take a few minutes, be patient. The package has dependencies such as [Optim.jl](https://julianlsolvers.github.io/Optim.jl/stable/) and [Lasso.jl](https://juliastats.org/Lasso.jl/stable/) (see the `Project.toml` file for the full list), but everything is installed automatically. 

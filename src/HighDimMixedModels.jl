@@ -4,10 +4,10 @@ module HighDimMixedModels
 using Statistics
 using LinearAlgebra
 using Random
-using InvertedIndices 
+using InvertedIndices
 using Optim: Optim, optimize
 using Parameters: @with_kw
-using MLBase: Kfold 
+using MLBase: Kfold
 using Lasso: Lasso
 using StatsBase: StatsBase
 
@@ -22,54 +22,59 @@ include("helpers.jl")
 include("structs.jl")
 include("statsbase.jl")
 
+
 """
     hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real}, 
-        grp::Vector{<:Union{String, Int64}}, Z::Matrix{<:Real}=X;
-        standardize=true, penalty::String="scad", λ::Real=10.0, scada::Real=3.7, 
-        wts::Union{Vector, Nothing}=nothing, init_coef::Union{Vector,Nothing}=nothing, 
-        ψstr::String="diag", control::Control=Control())
+         grp::Vector{<:Union{String, Int64}}, Z::Matrix{<:Real}=X; 
+         <keyword arguments>)
 
-Main function for the package. Fits a penalized linear mixed effect model using the coordinate gradient descent algorithm.
+Fit a penalized linear mixed effect model using the coordinate gradient descent (CGD) 
+algorithm and return a fitted model of type `HDMModel`. 
 
 # Arguments
+- `X`: Low dimensional (N by q) design matrix for unpenalized fixed effects (**first column must be all 1's to fit intercept**) 
+- `G`: High dimensional (N by p) design matrix for penalized fixed effects (**should not include column of 1's**) 
+- `y`: Length N response vector
+- `grp`: Length N vector with group assignments of each observation 
+- `Z=X`: Random effects design matrix (N by m), should contain some subset of the columns of `X` (defaults to equal `X`)
+Keyword: 
+- `penalty::String="scad"`: Either "scad" or "lasso"
+- `standardize::Bool=true`: Whether to standardize the columns of all design matrices before performing coordinate descent. The value of `λ` (and `wts`) should be chosen accordingly. Estimates will be returned to the original scale at the end.
+- `λ::Real=10.0`: Positive number providing the regularization parameter for the penalty
+- `wts::Union{Vector,Nothing}=nothing`: If specified, the penalty on covariate j will be λ/wⱼ, so this argument is useful if you want to penalize some covariates more than others. 
+- `scada::Real=3.7`: Positive number providing the extra tuning parameter for the scad penalty (ignored for lasso)
+- `ψstr::String="diag"`: One of "ident", "diag", or "sym", specifying the structure of the random effects' covariance matrix 
+- `init_coef::Union{Tuple,Nothing} = nothing`: If specified, provides the initialization to the algorithm. See notes below for more details
+- `control::Control = Control()`: Custom struct with hyperparameters of the CGD algorithm, defaults are in documentation of `Control` struct
 
-Positional: 
-- `X`: Low dimensional (N by q) design matrix for unpenalized fixed effects (**first column must be 1's to fit intercept**) 
-- `G`: High dimensional (N by p) design matrix for penalized fixed effects (should not include column of 1's) 
-- `y`: Response vector
-- `grp`: Vector of either strings or integers with group assignments of each observation 
-- `Z`: Design matrix (N by m) for random effects, defaults to equal `X`
-
-Keyword:
-- `penalty`: String, one of "scad" (default) or "lasso"
-- `λ`: Positive number, default=10, providing the regularization parameter for the penalty
-- `scada`: Positive number, default=3.7, providing the extra tuning parameter for the SCAD penalty (ignored if penalty is "lasso")
-- `standardize`: Boolean, deault=true, whether to standardize the columns of all design matrices before performing coordinate descent. Note that the value of λ should be chosen accordingly. Results will always be returned on the original scale
-- `wts`: Vector of length p, default is vector of 1's. The penalty on covariate j will be λ/wⱼ, so this argument is useful if you want to penalize some covariates more than others. 
-- `ψstr`: String, one of "diag" (default), "ident", or "sym", specifying covariance structure of the random effects 
-- `init_coef`: Named tuple of form (β, L, σ²), where 
-    - β is a vector of length p + q providing an initial estimate of the fixed effect coefficients
-    - L is the Cholesky factor of the random effect covariance matrix, and is represented as 
-        - a scalar if ψstr="ident"
-        - a vector of length m if ψstr="diag"
-        - a lower triangular matrix of size m by m if ψstr="sym"
-    - σ² is a scalar providing an initial estimate of the noise variance
-    See below for how these inital parameter estimates are calculated if not provided.
-- `control`: Custom struct with fields for hyperparameters of the algorithm, defaults are in documentation of `Control` struct
-
-If the `init_coef` argument is not specified, we perform the following steps to obtain the initial parameters to feed to the coordinate descent algorithm:
-1. First, a LASSO (with λ chosen using cross validation) that ignores random effects is performed to estimate the fixed effect parameters. 
-2. Then, L, assumed for the moment to be a scalar, and σ² are estimated to maximize the likelihood given the estimated fixed effect parameters.
-3. Finally, if `ψstr` is "diag" or "sym", the scalar L is converted to a vector or matrix by repeating the scalar or filling the diagonal of a matrix with the scalar, respectively.
-
-# Returns
-Fitted model object of type `HDMModel` with fields for all relevant information about the model fit.
+# Notes
+The initialization to the descent algorithm can be specified in the `init_coef` argument as a tuple of the form (β, L, σ²), where
+- β is a vector of length p + q providing an initial estimate of the fixed effect coefficients
+- L is the Cholesky factor of the random effect covariance matrix, and is represented as 
+    - a scalar if ψstr="ident"
+    - a vector of length m if ψstr="diag"
+    - a lower triangular matrix of size m by m if ψstr="sym"
+- σ² is a scalar providing an initial estimate of the noise variance
+If the `init_coef` argument is not specified, we obtain initial parameter estimates in the following manner:
+1. A LASSO that ignores random effects (with λ chosen using cross validation) is performed to estimate the fixed effect parameters. 
+2. L, assumed temporarilly to be a scalar, and σ² are estimated to maximize the likelihood given these estimated fixed effect parameters.
+3. If `ψstr` is "diag" or "sym", the scalar L is converted to a vector or matrix by repeating the scalar or filling the diagonal of a matrix with the scalar, respectively.
 """
-function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real}, 
-    grp::Vector{<:Union{String, Int64}}, Z::Matrix{<:Real}=X;
-    penalty::String="scad", λ::Real=10.0, scada::Real=3.7, standardize=true, 
-    wts::Union{Vector, Nothing}=nothing, ψstr::String="diag", 
-    init_coef::Union{Vector,Nothing}=nothing, control::Control=Control())
+function hdmm(
+    X::Matrix{<:Real},
+    G::Matrix{<:Real},
+    y::Vector{<:Real},
+    grp::Vector{<:Union{String,Int64}},
+    Z::Matrix{<:Real} = X;
+    penalty::String = "scad",
+    standardize::Bool = true,
+    λ::Real = 10.0,
+    wts::Union{Vector,Nothing} = nothing,
+    scada::Real = 3.7,
+    ψstr::String = "diag",
+    init_coef::Union{Tuple,Nothing} = nothing,
+    control::Control = Control(),
+)
 
     #Get dimensions
     N = length(y) # Total number of observations
@@ -126,20 +131,20 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     #Standardize design matrices if so desired
     if standardize
         XGor = copy(XG)
-        meansx = mean(XG[:, Not(1)], dims=1)
-        sdsx = std(XG[:, Not(1)], dims=1)
+        meansx = mean(XG[:, Not(1)], dims = 1)
+        sdsx = std(XG[:, Not(1)], dims = 1)
         XG = (XG[:, Not(1)] .- meansx) ./ sdsx
         XG = [fill(1, N) XG]
 
         Zor = copy(Z)
         if Z_int # If first column of Z is an intercept
-            meansz = mean(Z[:, Not(1)], dims=1)
-            sdsz = std(Z[:, Not(1)], dims=1)
+            meansz = mean(Z[:, Not(1)], dims = 1)
+            sdsz = std(Z[:, Not(1)], dims = 1)
             Z = (Z[:, Not(1)] .- meansz) ./ sdsz
             Z = [fill(1, N) Z]
-        else 
-            meansz = mean(Z, dims=1)
-            sdsz = std(Z, dims=1)
+        else
+            meansz = mean(Z, dims = 1)
+            sdsz = std(Z, dims = 1)
             Z = (Z .- meansz) ./ sdsz
         end
     end
@@ -157,11 +162,15 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     # ---------------------------------------------
     if init_coef === nothing
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = Lasso.fit(Lasso.LassoModel, XG[:, Not(1)], y; 
-                                maxncoef = max(2*N, 2*p), #see https://github.com/JuliaStats/Lasso.jl/issues/54
-                                penalty_factor=[zeros(q - 1); 1 ./ wts], 
-                                select=Lasso.MinCVmse(Kfold(N, 10)))
-        βstart = Lasso.coef(lassopath) 
+        lassopath = Lasso.fit(
+            Lasso.LassoModel,
+            XG[:, Not(1)],
+            y;
+            maxncoef = max(2 * N, 2 * p), #see https://github.com/JuliaStats/Lasso.jl/issues/54
+            penalty_factor = [zeros(q - 1); 1 ./ wts],
+            select = Lasso.MinCVmse(Kfold(N, 10)),
+        )
+        βstart = Lasso.coef(lassopath)
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)
         #Get L in form specified by ψstr
@@ -196,8 +205,8 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     varp_iter = vcat(Lvec_iter, sqrt(σ²iter)) #Vector of covariance parameters
     neglike_iter = neglike_start
     fct_iter = fct_start
-    hess = zeros(q+p) #Container for future calculations
-    mat = zeros(g, q+p) #Container for future calculation
+    hess = zeros(q + p) #Container for future calculations
+    mat = zeros(g, q + p) #Container for future calculation
 
     convβ = norm(βiter)^2
     conv_varp = norm(varp_iter)^2
@@ -210,7 +219,8 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     num_arm = 0 #Goes up by 1 every time Armijo needs to be performed (cannot be computed analytically)
     arm_con = 0 #Goes up by 1 every time an Armijo step fails to converge
 
-    while (max(convβ, conv_varp, conv_fct) > control.tol || !do_all) && (counter < control.max_iter)
+    while (max(convβ, conv_varp, conv_fct) > control.tol || !do_all) &&
+        (counter < control.max_iter)
 
         counter += 1
 
@@ -232,7 +242,7 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
             stopped = true
             break
         end
-        
+
         # We make the active set include all covariates every act_num iterations
         if counter_in == 0 || counter_in > control.act_num
             active_set = 1:(p+q)
@@ -244,14 +254,14 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
         end
 
         #Calculate the Hessian for the coordinates of the active set
-        hessian_diag!(XGgrp, invVgrp, active_set, hess, mat[:,active_set])
+        hessian_diag!(XGgrp, invVgrp, active_set, hess, mat[:, active_set])
         hess_untrunc = copy(hess)
         hess[active_set] = min.(max.(hess[active_set], control.lower), control.upper)
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
-            cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp) 
+            cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:q
@@ -263,8 +273,23 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
                 end
             else #Must actually perform Armijo line search 
                 num_arm += 1
-                fct_iter, arm_con = armijo!(XGgrp, ygrp, invVgrp, βiter, j, q, cut, hess_untrunc[j],
-                    hess[j], penalty, λwtd, scada, fct_iter, arm_con, control)
+                fct_iter, arm_con = armijo!(
+                    XGgrp,
+                    ygrp,
+                    invVgrp,
+                    βiter,
+                    j,
+                    q,
+                    cut,
+                    hess_untrunc[j],
+                    hess[j],
+                    penalty,
+                    λwtd,
+                    scada,
+                    fct_iter,
+                    arm_con,
+                    control,
+                )
             end
         end
 
@@ -280,19 +305,45 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
             #println(counter)
             #println(Liter)
             #println(σ²iter)
-            Liter = L_ident_update(XGgrp, ygrp, Zgrp, βiter, σ²iter,
-                control.var_int, control.thres)
+            Liter = L_scalar_update(
+                XGgrp,
+                ygrp,
+                Zgrp,
+                βiter,
+                σ²iter,
+                control.var_int,
+                control.thres,
+            )
         elseif ψstr == "diag"
-            for s in 1:m
-                L_diag_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, s,
-                    control.var_int, control.thres)
+            for s = 1:m
+                L_update!(
+                    Liter,
+                    XGgrp,
+                    ygrp,
+                    Zgrp,
+                    βiter,
+                    σ²iter,
+                    s,
+                    control.var_int,
+                    control.thres,
+                )
             end
         else  #ψstr == "sym"
-            for i in 1:m
-                for j in 1:i
+            for i = 1:m
+                for j = 1:i
                     #println("Updating ($i, $j) coordinate of L")
-                    L_sym_update!(Liter, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i, j),
-                        control.var_int, control.cov_int, control.thres)
+                    L_update!(
+                        Liter,
+                        XGgrp,
+                        ygrp,
+                        Zgrp,
+                        βiter,
+                        σ²iter,
+                        (i, j),
+                        control.var_int,
+                        control.cov_int,
+                        control.thres,
+                    )
                 end
             end
         end
@@ -326,11 +377,11 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
         #If parameters still doesn't change after that, then the while condition won't get satisfied 
         #because do_all will be true
         if max(convβ, conv_varp, conv_fct) <= control.tol
-            counter_in = 0 
+            counter_in = 0
         end
 
     end
-    
+
     if stopped == true
         error("More active fixed effects than samples. Choose larger λ.")
     end
@@ -374,7 +425,11 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
 
     #Predicted random effects
     resid_fixed = [yᵢ - XGᵢ * βiter for (yᵢ, XGᵢ) in zip(ygrp, XGgrp)]
-    u = sqrt(σ²iter) * [inv(Lmat' * Zᵢ' * Zᵢ * Lmat + σ²iter * I(m)) * Lmat' * Zᵢ' * residᵢ for (Zᵢ, residᵢ) in zip(Zgrp, resid_fixed)]
+    u =
+        sqrt(σ²iter) * [
+            inv(Lmat' * Zᵢ' * Zᵢ * Lmat + σ²iter * I(m)) * Lmat' * Zᵢ' * residᵢ for
+            (Zᵢ, residᵢ) in zip(Zgrp, resid_fixed)
+        ]
     b = [Lmat * uᵢ for uᵢ in u] / sqrt(σ²iter)
 
     #Fitted values and residuals
@@ -383,7 +438,7 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     for (i, group) in enumerate(unique(grp))
         fitted[grp.==group] = fittedgrp[i]
     end
-    resid = y-fitted
+    resid = y - fitted
 
     #Number of covariance parameters
     nz_covpar = sum(Liter .!= 0)
@@ -394,7 +449,8 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     else #scalar
         n_covpar = 1
     end
-    n_covpar == nz_covpar || println("$(n_covpar-nz_covpar) redundant variance/covariance parameters (set to 0)")
+    n_covpar == nz_covpar ||
+        println("$(n_covpar-nz_covpar) redundant variance/covariance parameters (set to 0)")
 
     #Number of non-zeros in final fixed effect estimates
     nz = sum(βiter .!= 0)
@@ -406,10 +462,37 @@ function hdmm(X::Matrix{<:Real}, G::Matrix{<:Real}, y::Vector{<:Real},
     bic = deviance + log(N) * npar
 
     #Return
-    out = HDMModel((X=X, G=G, Z=Z, y=y, grp=grp), wts, (βstart=βstart, Lstart=Lstart, σ²start=σ²start), 
-                -neglike_start, fct_start, nz_start, penalty,  λ, scada, σ²iter, Lmat, βiter, b, fitted,
-                resid, -neglike_iter, fct_iter, npar, nz, deviance,  arm_con,
-                num_arm, aic,  bic, counter,  ψstr, Lmat * Lmat', control)
+    out = HDMModel(
+        (X = X, G = G, Z = Z, y = y, grp = grp),
+        wts,
+        (βstart = βstart, Lstart = Lstart, σ²start = σ²start),
+        -neglike_start,
+        fct_start,
+        nz_start,
+        penalty,
+        standardize,
+        λ,
+        scada,
+        σ²iter,
+        Lmat,
+        βiter,
+        b,
+        fitted,
+        resid,
+        -neglike_iter,
+        fct_iter,
+        npar,
+        nz,
+        deviance,
+        num_arm,
+        arm_con,
+        aic,
+        bic,
+        counter,
+        ψstr,
+        Lmat * Lmat',
+        control,
+    )
 
     return out
 
