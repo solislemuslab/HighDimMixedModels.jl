@@ -311,8 +311,7 @@ function hdmm(
                 Zgrp,
                 βiter,
                 σ²iter,
-                control.var_int,
-                control.thres,
+                control
             )
         elseif ψstr == "diag"
             for s = 1:m
@@ -324,8 +323,7 @@ function hdmm(
                     βiter,
                     σ²iter,
                     s,
-                    control.var_int,
-                    control.thres,
+                    control
                 )
             end
         else  #ψstr == "sym"
@@ -340,16 +338,14 @@ function hdmm(
                         βiter,
                         σ²iter,
                         (i, j),
-                        control.var_int,
-                        control.cov_int,
-                        control.thres,
+                        control
                     )
                 end
             end
         end
 
         #Optimization of σ²
-        σ²iter = σ²update(XGgrp, ygrp, Zgrp, βiter, Liter, control.var_int)
+        σ²iter = σ²update(XGgrp, ygrp, Zgrp, βiter, Liter, control)
 
         #Vector of variance/covariance parameters
         Lvec_iter = ndims(Liter) == 2 ? vec(Liter) : Liter

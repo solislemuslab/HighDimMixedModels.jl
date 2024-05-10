@@ -57,7 +57,7 @@ end
 
 Calculate the SCAD penalty
 """
-function get_scad(βpen::Union{Number,Array{Number}}, λ, a = 3.7)
+function get_scad(βpen::Union{Number,Vector}, λ, a = 3.7)
 
     isa(βpen, Number) && (βpen = [βpen])
     scad = copy(βpen)
@@ -324,13 +324,13 @@ function armijo!(
 end
 
 """ 
-    L_ident_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
+    L_ident_update(XGgrp, ygrp, Zgrp, β, σ², control)
 
 Update of L for identity covariance structure
 """
-function L_scalar_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
+function L_scalar_update(XGgrp, ygrp, Zgrp, β, σ², control)
 
-    L_lb, L_ub = var_int
+    L_lb, L_ub = control.var_int
     g = length(Zgrp)
 
     function profile(L::Float64)::Float64
@@ -343,7 +343,7 @@ function L_scalar_update(XGgrp, ygrp, Zgrp, β, σ², var_int, thres)
     Optim.converged(result) || error("Minimization with respect to L failed to converge")
     min = result.minimizer
 
-    if Float64(min) < thres
+    if Float64(min) < control.thres
         L = zero(eltype(min))
         println("L was set to 0 (no group variation)")
     else
@@ -355,11 +355,11 @@ end
 
 
 """
-    L_update!(L::Vector, XGgrp, ygrp, Zgrp, β, σ², s, control)
+    L_update!(L::AbstractVector, XGgrp, ygrp, Zgrp, β, σ², s, control)
 
 Update of coordinate s of L for diagonal covariance structure
 """
-function L_update!(L::Vector, XGgrp, ygrp, Zgrp, β, σ², s, control)
+function L_update!(L::AbstractVector, XGgrp, ygrp, Zgrp, β, σ², s, control)
 
     g = length(Zgrp)
     #Function to optimize
@@ -393,7 +393,7 @@ end
 
 Update of entry (coords[1], coords[2]) of matrix L, the lower traiangular Choelsky factor of the random effects covariance matrix
 """
-function L_update!(L::Matrix, XGgrp, ygrp, Zgrp, β, σ², coords, control)
+function L_update!(L::AbstractMatrix, XGgrp, ygrp, Zgrp, β, σ², coords, control)
 
     #Are we minimizing a covariance parameter or a variance parameters
     int = coords[1] == coords[2] ? control.var_int : control.cov_int
@@ -425,30 +425,11 @@ end
 
 
 """
-    σ²update(XGgrp, ygrp, Zgrp, β, L, var_int)
+    σ²update(XGgrp, ygrp, Zgrp, β, L, control)
 
 Update the variance component parameter σ² using profile likelihood optimization.
-
-# Arguments
-- `XGgrp`::Vector{Matrix} Vector with fixed effect design matrices for each group.
-- `ygrp::Vector{Vector}`: Response vectors.
-- `Zgrp::Vector{Matrix}`: Design matrices for the random effects.
-- `β::Vector{Real}`: Fixed effects coefficients.
-- `L::Union{Real, Vector, Matrix}`: Cholesky factorizations of the random effects covariance matrices.
-- `var_int::Tuple{Real, Real}`: Lower and upper bounds for the variance component.
-
-# Returns
-- `σ²::Float64`: Updated value of the variance component.
-
 """
-function σ²update(
-    XGgrp::Vector{Matrix},
-    ygrp::Vector{Vector},
-    Zgrp::Vector{Matrix},
-    β::Vector{Real},
-    L::Union{Real,Vector,Matrix},
-    var_int::Tuple{Real,Real},
-)
+function σ²update(XGgrp, ygrp, Zgrp, β, L, control)
 
     #Decision variable will be σ² rather than σ
     function profile(σ²::Float64)::Float64
@@ -457,7 +438,7 @@ function σ²update(
         get_negll(invVgrp, ygrp, XGgrp, β)
     end
 
-    x_lb, x_ub = var_int
+    x_lb, x_ub = control.var_int
     result = optimize(profile, x_lb^2, x_ub^2) #Square bounds because decision variable is σ²
 
     Optim.converged(result) || error("Minimization with respect to σ² failed to converge")

@@ -274,7 +274,7 @@ R"βiter = βiter_R"
 ### Test covariance parameter update functions
 
 #Start with testing for identity structure
-Lnew = hdmm.L_ident_update(XGgrp, ygrp, Zgrp, βiter, σ²iter, control.var_int, control.thres)
+Lnew = hdmm.L_scalar_update(XGgrp, ygrp, Zgrp, βiter, σ²iter, control)
 
 
 R"activeset <- which(βiter!=0)"
@@ -297,7 +297,7 @@ Ldiag = fill(Liter, m)
 R"Ldiag_R = rep(Liter_R, m)"
 #First component
 s = 1
-hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+hdmm.L_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control)
 Ldiag
 R"s = $s"
 R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
@@ -305,7 +305,7 @@ R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt
 R"Ldiag_R[s] = optRes$par"
 #Second component
 s = 2
-hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+hdmm.L_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control)
 Ldiag
 R"s = $s"
 R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
@@ -313,7 +313,7 @@ R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt
 R"Ldiag_R[s] = optRes$par"
 
 s = 3
-hdmm.L_diag_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control.var_int, control.thres)
+hdmm.L_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control)
 Ldiag
 R"s = $s"
 R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
@@ -336,8 +336,7 @@ Lsym = LowerTriangular(diagm(Ldiag))
 #Update off diagonal entries 
 for i in 2:m
     for j in 1:(i-1)
-        hdmm.L_sym_update!(Lsym, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), 
-        control.var_int, control.cov_int, control.thres)
+        hdmm.L_update!(Lsym, XGgrp, ygrp, Zgrp, βiter, σ²iter, (i,j), control)
     end
 end
 
@@ -362,7 +361,7 @@ end
 R"PsiIter <- Lsym_R %*% t(Lsym_R)" 
 
 ## Finally, test sigma update
-σ²iter = hdmm.σ²update(XGgrp, ygrp, Zgrp, βiter, Lsym, control.var_int)
+σ²iter = hdmm.σ²update(XGgrp, ygrp, Zgrp, βiter, Lsym, control)
 R"optRes <- nlminb(sqrt(σ2iter_R),MLsigmaFct,zGroup=Zgrp,resGroup=resGrp,Psi=PsiIter,lower = 0, upper = 100)"
 R"σ2iter_R = optRes$par^2"
 
