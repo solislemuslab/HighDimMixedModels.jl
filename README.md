@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/github/solislemuslab/HighDimMixedModels.jl/graph/badge.svg?token=BAF8P78SUS)](https://codecov.io/github/solislemuslab/HighDimMixedModels.jl)
 
 ## Overview 
-HighDimMixedModels.jl is a package for fitting regularized linear mixed-effect models. These models can be used to analyze hierarchical, high dimensional data, especially useful for situations in which the number of predictors exceeds the number of samples ($p > n$). 
+HighDimMixedModels.jl is a package for fitting regularized linear mixed-effect models on high-dimensional omics data. These models can be used to analyze hierarchical, high dimensional data, especially useful for situations in which the number of predictors exceeds the number of samples ($p > n$). 
 
 For fitting the model, the package implements the coordinate gradient descent algorithm found in
 
