@@ -229,6 +229,8 @@ end
 ll_old = hdmm.get_negll(invVgrp, ygrp, XGgrp, βiter)
 fct_old = hdmm.get_cost(ll_old, βiter[(q+1):end], "scad", λwtd[(q+1):end])
 
+# Test updating fixed effects with armijo rule
+
 R"cut = rep(0, p+q)"
 println("Current value of  βiter is $(βiter)")
 println("Current function value is $(fct_old)")
@@ -298,28 +300,30 @@ R"Ldiag_R = rep(Liter_R, m)"
 #First component
 s = 1
 hdmm.L_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control)
-Ldiag
+print(Ldiag)
 R"s = $s"
 R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
                          a=s,b=s,LPsi=diag(Ldiag_R, nrow=length(Ldiag_R)),lower = 10^(-6), upper = 100)"
 R"Ldiag_R[s] = optRes$par"
+R"print(Ldiag_R)"
+
 #Second component
 s = 2
 hdmm.L_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control)
-Ldiag
+print(Ldiag)
 R"s = $s"
 R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
                          a=s,b=s,LPsi=diag(Ldiag_R, nrow=length(Ldiag_R)),lower = 0, upper = 100)"
 R"Ldiag_R[s] = optRes$par"
-
+R"print(Ldiag_R)"
 s = 3
 hdmm.L_update!(Ldiag, XGgrp, ygrp, Zgrp, βiter, σ²iter, s, control)
-Ldiag
+print(Ldiag)
 R"s = $s"
 R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt(σ2iter_R),
                          a=s,b=s,LPsi=diag(Ldiag_R, nrow=length(Ldiag_R)),lower = 0, upper = 100)"
 R"Ldiag_R[s] = optRes$par"
-
+R"print(Ldiag_R)"
 
 @testset "L diagonal structure update function" begin
 

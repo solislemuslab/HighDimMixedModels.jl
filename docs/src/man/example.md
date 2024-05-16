@@ -35,7 +35,6 @@ nothing # hide
 Finally, we get the cluster (in this case, student) ids and the response, the students' Ravens test scores. 
 
 ```@example cog
-using HighDimMixedModels
 student_id = cog_df.id
 y = cog_df.ravens
 nothing # hide
@@ -43,7 +42,7 @@ nothing # hide
 
 
 ## Fitting model
-The main function in the package is `hdmm()`, which requires the two design matrices, the response, and the group id as required positional arguments, and returns the fitted model:
+The main function in the package is `hdmm()`, which accepts the two design matrices, the response, and the group id as required positional arguments, and returns the fitted model:
 ```@example cog
 using HighDimMixedModels
 fit = hdmm(X, G, y, student_id)
@@ -55,9 +54,9 @@ By default, the features that are assigned random slopes are all those that appe
 
 ## Inspecting model
 
-The object `fit` which is returned by `hdmm()` is a struct with fields providing all relevant information about the model fit. These can be accessed using the `dot` notation, e.g. `fit.fixef` to retrieve all the fixed effect estimates (including those set to 0) and `fit.log_like` to get the log likelihood at the estimates. To print all the fields stored in the object, you can type `fit.` followed by the tab key.
+The object `fit` which is returned by `hdmm()` is a struct with fields providing all relevant information about the model fit. These can be accessed using the `dot` notation, e.g. `fit.fixef` to retrieve all the fixed effect estimates (including those set to 0) and `fit.log_like` to get the log likelihood at the estimates. To print all the fields stored in the object, you can type `fit.` followed by the tab key or check the [documentation for the struct](https://solislemuslab.github.io/HighDimMixedModels.jl/dev/lib/public_methods/#HighDimMixedModels.HDMModel).
 
-We also implement several common extraction functions from [StatsBase.jl](https://github.com/JuliaStats/StatsBase.jl/tree/master), such as `residuals(fit)` and `fitted(fit)`. Note that these fitted values and residuals take into account the random effects by incorporating the best prediction of these random effects (BLUPs) for each student into the predictions. 
+Several model inspection functions from [StatsBase.jl](https://github.com/JuliaStats/StatsBase.jl/tree/master) are also available, such as `residuals(fit)` and `fitted(fit)`. Note that these fitted values and residuals take into account the random effects by incorporating the best prediction of these random effects (BLUPs) for each student into the predictions. 
 
 To print a table with only the selected coefficients (i.e. those that are not set to 0), use the function `coeftable()`. The names of these variables will appear alongside their estimates if you pass them as a second argument:
 ```@example cog
