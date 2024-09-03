@@ -77,8 +77,8 @@ Results of a fitted model
 - `control`: Control object containing hyperparameters that were used for the coordinate descent algorithm
 """
 struct HDMModel
-    data::NamedTuple
-    weights::Vector
+    data::Union{NamedTuple, Nothing} # allow for discarding of data to save space
+    weights::Union{Vector, Nothing} # allow for no weights
     init_coef::NamedTuple
     init_log_like::Float64
     init_objective::Float64
@@ -89,10 +89,10 @@ struct HDMModel
     scada::Real
     σ²::Real
     L::Matrix
-    fixef::Vector
-    ranef::Vector
-    fitted::Vector
-    resid::Vector
+    fixef::Vector 
+    ranef::Union{Vector, Nothing} # allow for discarding of random effects to save space
+    fitted::Union{Vector, Nothing} # allow for discarding of fitted values to save space
+    resid::Union{Vector, Nothing}
     log_like::Float64
     objective::Float64
     npar::Int
