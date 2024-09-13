@@ -125,29 +125,15 @@ function hdmm(
     # --- Introductory allocations ----------------
     # ---------------------------------------------
 
+    #Standardize penalized design matrices G if so desired
+    if standardize
+        meansG = mean(G, dims = 1)
+        sdsG = std(G, dims = 1)
+        G = (G .- meansG) ./ sdsG
+    end
+
     #Merge unpenalized and penalized design matrices
     XG = [X G]
-
-    #Standardize design matrices if so desired
-    if standardize
-        XGor = copy(XG)
-        meansx = mean(XG[:, Not(1)], dims = 1)
-        sdsx = std(XG[:, Not(1)], dims = 1)
-        XG = (XG[:, Not(1)] .- meansx) ./ sdsx
-        XG = [fill(1, N) XG]
-
-        Zor = copy(Z)
-        if Z_int # If first column of Z is an intercept
-            meansz = mean(Z[:, Not(1)], dims = 1)
-            sdsz = std(Z[:, Not(1)], dims = 1)
-            Z = (Z[:, Not(1)] .- meansz) ./ sdsz
-            Z = [fill(1, N) Z]
-        else
-            meansz = mean(Z, dims = 1)
-            sdsz = std(Z, dims = 1)
-            Z = (Z .- meansz) ./ sdsz
-        end
-    end
 
     #Get grouped data, i.e. lists of matrices/vectors
     Zgrp, XGgrp, ygrp = Matrix{eltype(Z)}[], Matrix{eltype(XG)}[], Vector{eltype(y)}[]
@@ -164,11 +150,11 @@ function hdmm(
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
         lassopath = Lasso.fit(
             Lasso.LassoModel,
-            XG[:, Not(1)],
+            XG[:, Not(1)], #Function for LASSO fitting accepts design matrix without intercept column and assumes you want intercept fit
             y;
-            maxncoef = max(2 * N, 2 * p), #see https://github.com/JuliaStats/Lasso.jl/issues/54
-            penalty_factor = [zeros(q - 1); 1 ./ wts],
-            select = Lasso.MinCVmse(Kfold(N, 10)),
+            maxncoef = max(2 * N, 2 * p), #See https://github.com/JuliaStats/Lasso.jl/issues/54
+            penalty_factor = [zeros(q - 1); 1 ./ wts], # Don't penalize first q-1 covariates (q-1 because intercept has been removed)
+            select = Lasso.MinCVmse(Kfold(N, 10)), # Use cross-validation to select λ
         )
         βstart = Lasso.coef(lassopath)
         #Initialize covariance parameters
@@ -391,20 +377,15 @@ function hdmm(
 
     #Get parameters and design matrices on the original scale 
     if standardize
-        βiter[Not(1)] = βiter[Not(1)] ./ sdsx'
-        βiter[1] = βiter[1] - sum(meansx' .* βiter[Not(1)])
-        if Z_int
-            Lmat = Diagonal([1; vec(1 ./ sdsz)]) * Lmat
-        else
-            Lmat = Diagonal(vec(1 ./ sdsz)) * Lmat
-        end
-
-        XG = XGor
-        Z = Zor
-        Zgrp, XGgrp = Matrix[], Matrix[]
+        βstart[(q+1):end] = βstart[(q+1):end] ./ sdsG'
+        βstart[1] = βstart[1] - sum(meansG' .* βstart[(q+1):end])
+        βiter[(q+1):end] = βiter[(q+1):end] ./ sdsG'
+        βiter[1] = βiter[1] - sum(meansG' .* βiter[(q+1):end])
+        G = G .* sdsG .+ sdsG 
+        XG = [X G]
+        XGgrp = Matrix[]
         for group in unique(grp)
-            Zᵢ, XGᵢ = Z[grp.==group, :], XG[grp.==group, :]
-            push!(Zgrp, Zᵢ)
+            XGᵢ = XG[grp.==group, :]
             push!(XGgrp, XGᵢ)
         end
     end
