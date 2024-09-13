@@ -19,7 +19,7 @@ Hyperparameters for the coordinate descent algorithm
 - `var_int`: Tuple with bounds of interval on which to optimize when updating a diagonal entry of L, default (0, 100). See Optim.jl in section "minimizing a univariate function on a bounded interval"
 - `cov_int`: Tuple with bounds of interval on which to optimize the when updating a non-diagonal entry of L, default (-50, 50). See Optim.jl in section "minimizing a univariate function on a bounded interval"
 - `optimize_method`: Symbol denoting method for performing the univariate optimization, either :Brent or :GoldenSection, default is :Brent
-- `thres`: If an update of an entry of L or of σ² would be smaller in absolute value than `thres`, the parameter is set to 0
+- `thres`: If an update to a diagonal entry of L is smaller than `thres`, the parameter is set to 0
 """
 @with_kw mutable struct Control
     tol::Real = 1e-4
@@ -92,7 +92,7 @@ struct HDMModel
     fixef::Vector 
     ranef::Union{Vector, Nothing} # allow for discarding of random effects to save space
     fitted::Union{Vector, Nothing} # allow for discarding of fitted values to save space
-    resid::Union{Vector, Nothing}
+    resid::Union{Vector, Nothing} # allow for discarding of residuals to save space
     log_like::Float64
     objective::Float64
     npar::Int

@@ -236,8 +236,9 @@ function hdmm(
         #See  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
         active_set = findall(βiter .!= 0)
 
-        # If the active set is larger than the total sample size and we're a few iterations in,
-        # that means we're converging towards a solution that interpolates the data, which is bad
+        # If the active set is larger than the total sample size and we're at least a few iterations in,
+        # that means we're converging towards a solution that interpolates the data (and σ² is converging to 0)
+        # Tell user to increase λ
         if length(active_set) > N && λ > 0 && counter > 2
             stopped = true
             break
@@ -292,15 +293,9 @@ function hdmm(
                 )
             end
         end
-
-        #Calculate new objective function and print if trace > 2
-        neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
-        fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
-        control.trace > 2 && println("After updating fixed effects, cost is $fct_iter")
-
+        
         #---Optimization with respect to random effect parameters ----------------------------
         #------------------------------------------------------------------------------------
-
         if ψstr == "ident"
             #println(counter)
             #println(Liter)
@@ -357,12 +352,7 @@ function hdmm(
         #Calculate new objective function
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
-
-        #Inserted to prevent covergence issues
-        # if neglike_iter < 0
-        #     stopped = true
-        #     break
-        # end
+        control.trace > 2 && println("After $counter cycles, cost is $fct_iter")
 
         #Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
@@ -379,7 +369,7 @@ function hdmm(
     end
 
     if stopped == true
-        error("More active fixed effects than samples. Choose larger λ.")
+        @warn "More active fixed effects than samples and error variance (σ² = $σ²iter) close to 0. Choose larger λ."
     end
 
     if arm_con > 0
