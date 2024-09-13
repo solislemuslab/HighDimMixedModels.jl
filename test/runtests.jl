@@ -325,6 +325,8 @@ R"optRes <- nlminb(Ldiag_R[s],MLpdSymFct,zGroup=Zgrp,resGroup=resGrp, sigma=sqrt
 R"Ldiag_R[s] = optRes$par"
 R"print(Ldiag_R)"
 
+@rget Ldiag_R
+println(Ldiag, Ldiag_R)
 @testset "L diagonal structure update function" begin
 
     @rget Ldiag_R 
