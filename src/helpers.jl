@@ -319,6 +319,10 @@ function armijo!(
                 return (fct = fct, arm_con = arm_con)
             end
         end
+    else 
+        control.trace > 1 && @warn "Armijo for coordinate $(j) of β not successful, direction was 0"
+        arm_con += 1
+        return (fct = fct_old, arm_con = arm_con)
     end
 
 end
