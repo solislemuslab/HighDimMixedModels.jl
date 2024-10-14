@@ -43,6 +43,7 @@ Keyword:
 - `λ::Real=10.0`: Positive number providing the regularization parameter for the penalty
 - `wts::Union{Vector,Nothing}=nothing`: If specified, the penalty on covariate j will be λ/wⱼ, so this argument is useful if you want to penalize some covariates more than others. 
 - `scada::Real=3.7`: Positive number providing the extra tuning parameter for the scad penalty (ignored for lasso)
+- `max_active`::Real=length(y)/2: Maximum number of fixed effects estimated non-zero (defaults to half the total sample size)
 - `ψstr::String="diag"`: One of "ident", "diag", or "sym", specifying the structure of the random effects' covariance matrix 
 - `init_coef::Union{Tuple,Nothing} = nothing`: If specified, provides the initialization to the algorithm. See notes below for more details
 - `control::Control = Control()`: Custom struct with hyperparameters of the CGD algorithm, defaults are in documentation of `Control` struct
@@ -71,6 +72,7 @@ function hdmm(
     λ::Real = 10.0,
     wts::Union{Vector,Nothing} = nothing,
     scada::Real = 3.7,
+    max_active::Real = length(y)/2,
     ψstr::String = "diag",
     init_coef::Union{Tuple,Nothing} = nothing,
     control::Control = Control(),
@@ -110,6 +112,13 @@ function hdmm(
     λwtd = [zeros(q); λ ./ wts]
     @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
     @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
+    # Warn about behavior of cost function when using SCAD penalty
+    if control.trace && penalty == "scad"
+        printstyled("""
+                    Note that under SCAD penalty, the algorithm is not minimizing the original cost function, 
+                    so do not expect to cost to decrease monotonically during algorithm
+                    """, color = :cyan, bold = true)
+    end
 
     #Check that initial coefficients, if provided, make sense
     if init_coef !== nothing
@@ -178,7 +187,7 @@ function hdmm(
     invV!(invVgrp, Zgrp, Lstart, σ²start)
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
-    control.trace > 2 && println("Cost at initialization: $fct_start")
+    control.trace && println("Cost at initialization: $fct_start")
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
@@ -221,17 +230,17 @@ function hdmm(
         #We'll only update fixed effect parameters in "active_set"
         #See  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
         active_set = findall(βiter .!= 0)
-
-        # If the active set is larger than the total sample size and we're at least a few iterations in,
-        # that means we're converging towards a solution that interpolates the data (and σ² is converging to 0)
+        control.trace && println("Active set size: $(length(active_set))")
+        # If the active set is larger than half the total sample size and we've iterated at least once,
+        # that means we're converging towards a non-sparse solution 
         # Tell user to increase λ
-        if length(active_set) > N && λ > 0 && counter > 2
+        if length(active_set) > max_active && λ > 0 && counter >= 2
             stopped = true
             break
         end
 
         # We make the active set include all covariates every act_num iterations
-        if counter_in == 0 || counter_in > control.act_num
+        if counter_in == 0 || counter_in >= control.act_num
             active_set = 1:(p+q)
             counter_in = 1
             do_all = true
@@ -338,7 +347,7 @@ function hdmm(
         #Calculate new objective function
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
-        control.trace > 2 && println("After $counter cycles, cost is $fct_iter")
+        control.trace && println("After $counter cycles, original cost is $fct_iter")
 
         #Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
@@ -355,7 +364,7 @@ function hdmm(
     end
 
     if stopped == true
-        @warn "More active fixed effects than samples and error variance (σ² = $σ²iter) close to 0. Choose larger λ."
+        @warn "Exceeded maximum active set size. Choose larger λ."
     end
 
     if arm_con > 0

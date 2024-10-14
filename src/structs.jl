@@ -6,7 +6,7 @@ Hyperparameters for the coordinate descent algorithm
 # Fields
 - `tol`: Small positive number, default is 1e-4, providing convergence tolerance
 - `seed`: Random seed, default 770. Note that the only randomness in the algorithm is during the initialization of fixed effect parameters (for the data splits in the cross validation)
-- `trace`: Integer, default 2. 1 prints no output, 2 prints issues, and 3 prints issues and the objective function values during the algorithm 
+- `trace`: Bool, default `false`. If `true`, prints cost and size of active set over the course of the algorithm.
 - `max_iter`: Integer, default 1000, giving maximum number of iterations in the coordinate gradient descent.
 - `max_armijo`: Integer, default 20, giving the maximum number of steps in the Armijo algorithm. If the maximum is reached, algorithm doesn't update current coordinate and proceeds to the next coordinate
 - `act_num`: Integer, default 5. We will only update all of the fixed effect parameters every `act_num` iterations. Otherwise, we update only the parameters in the current active set.
@@ -24,7 +24,7 @@ Hyperparameters for the coordinate descent algorithm
 @with_kw mutable struct Control
     tol::Real = 1e-4
     seed::Int = 770
-    trace::Int = 2
+    trace::Bool = false
     max_iter::Int = 1000
     max_armijo::Int = 20
     act_num::Int = 5

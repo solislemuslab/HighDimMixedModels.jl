@@ -379,7 +379,7 @@ end
 
 
 ##### Now let's test the full algorithm #######
-control.trace = 3
+control.trace = true
 mod_fit1 = hdmm.hdmm(X, G, y, grp; control)
 mod_fit2 = hdmm.hdmm(X, G, y, grp; λ = 1, control, penalty = "lasso")
 mod_fit3 = hdmm.hdmm(X, G, y, grp; λ = 1, control)
