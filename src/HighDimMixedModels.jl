@@ -116,7 +116,7 @@ function hdmm(
     if control.trace && penalty == "scad"
         printstyled("""
                     Note that under SCAD penalty, the algorithm is not minimizing the original cost function, 
-                    so do not expect to cost to decrease monotonically during algorithm
+                    so objective won't necesarilly decrease monotonically.
                     """, color = :cyan, bold = true)
     end
 
@@ -187,7 +187,7 @@ function hdmm(
     invV!(invVgrp, Zgrp, Lstart, σ²start)
     neglike_start = get_negll(invVgrp, ygrp, XGgrp, βstart)
     fct_start = get_cost(neglike_start, βstart[(q+1):end], penalty, λwtd[(q+1):end], scada)
-    control.trace && println("Cost at initialization: $fct_start")
+    control.trace && println("Objective at initialization: $fct_start")
 
     # --- Coordinate Gradient Descent -------------
     # ---------------------------------------------
@@ -230,7 +230,7 @@ function hdmm(
         #We'll only update fixed effect parameters in "active_set"
         #See  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
         active_set = findall(βiter .!= 0)
-        control.trace && println("Active set size: $(length(active_set))")
+        control.trace && println("And size of active set is: $(length(active_set))")
         # If the active set is larger than half the total sample size and we've iterated at least once,
         # that means we're converging towards a non-sparse solution 
         # Tell user to increase λ
@@ -347,7 +347,7 @@ function hdmm(
         #Calculate new objective function
         neglike_iter = get_negll(invVgrp, ygrp, XGgrp, βiter)
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
-        control.trace && println("After $counter cycles, original cost is $fct_iter")
+        control.trace && println("After $counter cycles, objective is: $fct_iter")
 
         #Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
