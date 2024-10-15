@@ -150,7 +150,7 @@ using DataFrames
 DataFrame(
     :true => β[1:10], 
     :lasso_no_random => out_las.init_coef.βstart[1:10],
-    :lasso_with_random => out_las.fixef[1:10] 
+    :lasso_with_random => out_las.fixef[1:10], 
     :scad_with_random => out_scad.fixef[1:10]
     )
 ```
