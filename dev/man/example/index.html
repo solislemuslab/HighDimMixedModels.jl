@@ -7,8 +7,7 @@ X = [ones(N) randn(N, q-1)]
 G = randn(N, p-q)
 XG = [X G]
 sd_signal = 1
-β = [sd_signal .* randn(10); zeros(p-10)]
-nothing</code></pre><p>Now we generate the response from these design matrices</p><pre><code class="language-julia hljs">using Distributions
+β = [sd_signal .* randn(10); zeros(p-10)]</code></pre><p>Now we generate the response from these design matrices</p><pre><code class="language-julia hljs">using Distributions
 using LinearAlgebra
 # Generate group assignments
 gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
@@ -28,63 +27,62 @@ for (i, group) in enumerate(unique(gr))
     bᵢ = b[:,i]
     yᵢ = Xᵢ*bᵢ + randn(nᵢ)
     y[group_ind] = y_fixed[group_ind] + yᵢ
-end
-nothing</code></pre><p>We can now fit the model. We prepare design matrices, X and G, that the function requires.  X contains the variables whose effect we do not wish to penalize and a column for the intercept. These ar G is the high dimensional matrix with all the variables whose effect we do want to penalize.  By default, the variables in X (including the intercept) are assigned a random effect and by default, the assumed covariance structure of the random effects is diagonal. After some experimentation, we can set the penalty <span>$\lambda$</span> to 60, which provides the sparsity we want. </p><pre><code class="language-julia hljs">using HighDimMixedModels
-out = hdmm(X, G, y, gr; λ = 60)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 500 observations
-Log-likelihood at convergence: -1000.8
+end</code></pre><p>We can now fit the model. We prepare design matrices, X and G, that the function requires.  X contains the variables whose effect we do not wish to penalize and a column for the intercept. These ar G is the high dimensional matrix with all the variables whose effect we do want to penalize.  By default, the variables in X (including the intercept) are assigned a random effect and by default, the assumed covariance structure of the random effects is diagonal. After some experimentation, we can set the penalty <span>$\lambda$</span> to 60, which provides the sparsity we want. </p><pre><code class="language-julia hljs">using HighDimMixedModels
+out = hdmm(X, G, y, gr; λ = 50)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 500 observations
+Log-likelihood at convergence: -990.03
 Random effect covariance matrix:
 4×4 Matrix{Float64}:
- 0.630769  0.0     0.0      0.0
- 0.0       1.3633  0.0      0.0
- 0.0       0.0     1.09095  0.0
- 0.0       0.0     0.0      0.467501
+ 0.641603  0.0      0.0      0.0
+ 0.0       1.34147  0.0      0.0
+ 0.0       0.0      1.08552  0.0
+ 0.0       0.0      0.0      0.478909
 Estimated 8 non-zero fixed effects:
-─────────────
-     Estimate
-─────────────
-1   1.22117
-2   1.17252
-3   1.93325
-4   0.701644
-5   0.0915263
-6   0.162527
-7  -1.36676
-8  -0.147408
-─────────────
-Estimated σ²: 1.2438
-</code></pre><p>Similary, we can fit a model with the LASSO penalty:</p><pre><code class="language-julia hljs">out_las = hdmm(X, G, y, gr; λ = 60, penalty = &quot;lasso&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 500 observations
-Log-likelihood at convergence: -1017.9
+────────────
+    Estimate
+────────────
+1   1.21385
+2   1.17592
+3   1.93121
+4   0.705847
+5   0.159678
+6   0.233205
+7  -1.37339
+8  -0.209196
+────────────
+Estimated σ²: 1.1415
+</code></pre><p>Similary, we can fit a model with the LASSO penalty:</p><pre><code class="language-julia hljs">out_las = hdmm(X, G, y, gr; λ = 50, penalty = &quot;lasso&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 500 observations
+Log-likelihood at convergence: -999.04
 Random effect covariance matrix:
 4×4 Matrix{Float64}:
- 0.623172  0.0      0.0      0.0
- 0.0       1.33235  0.0      0.0
- 0.0       0.0      1.09845  0.0
- 0.0       0.0      0.0      0.471544
+ 0.634403  0.0      0.0      0.0
+ 0.0       1.31143  0.0      0.0
+ 0.0       0.0      1.09396  0.0
+ 0.0       0.0      0.0      0.483075
 Estimated 8 non-zero fixed effects:
-─────────────
-     Estimate
-─────────────
-1   1.24848
-2   1.16281
-3   1.94435
-4   0.683607
-5   0.0436187
-6   0.115201
-7  -1.05232
-8  -0.116906
-─────────────
-Estimated σ²: 1.4217
+────────────
+    Estimate
+────────────
+1   1.23342
+2   1.16916
+3   1.93979
+4   0.692073
+5   0.133245
+6   0.209471
+7  -1.13896
+8  -0.195176
+────────────
+Estimated σ²: 1.2306
 </code></pre><p>We can compare the estimation performance of the LASSO and SCAD by printing their estimates side by side with the true non-zero parameters values:</p><pre><code class="language-julia hljs">[β[1:10] out.fixef[1:10] out_las.fixef[1:10]]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">10×3 Matrix{Float64}:
-  1.2027      1.22117     1.24848
-  1.02134     1.17252     1.16281
-  1.86524     1.93325     1.94435
-  0.754892    0.701644    0.683607
-  0.41828     0.0915263   0.0436187
-  0.462847    0.162527    0.115201
- -1.52023    -1.36676    -1.05232
- -0.4096     -0.147408   -0.116906
- -0.106364    0.0         0.0
-  0.0648396   0.0         0.0</code></pre><h2 id="Real-data"><a class="docs-heading-anchor" href="#Real-data">Real data</a><a id="Real-data-1"></a><a class="docs-heading-anchor-permalink" href="#Real-data" title="Permalink"></a></h2><h3 id="Load-dataset"><a class="docs-heading-anchor" href="#Load-dataset">Load dataset</a><a id="Load-dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Load-dataset" title="Permalink"></a></h3><p>The <a href="../../data/cognitive.csv">cognitive dataset</a> contains data from a <a href="https://www.sciencedirect.com/science/article/pii/S0022316623025622">study</a> of the effect of an intervention in school lunches among schools in Kenya, accessed via the R package <a href="https://cran.r-project.org/web/packages/splmm/index.html"><code>splmm</code></a>. The data is longitudinal with measurements of students&#39; performance on various tests taken at different points in time. We will fit a model with random intercepts and random growth slopes for each student. Note that while this is a low-dimensional example (<span>$p &lt; n$</span>), the algorithm that this package implements was designed and tested with the high dimensional use-case (<span>$p &gt; n$</span>) in mind.</p><p>First, we load the data into Julia and form a categorical variable for the treatment in the study, which was the type of lunch served (assigned at the school level).</p><pre><code class="language-julia hljs">using CSV
+  1.2027      1.21385    1.23342
+  1.02134     1.17592    1.16916
+  1.86524     1.93121    1.93979
+  0.754892    0.705847   0.692073
+  0.41828     0.159678   0.133245
+  0.462847    0.233205   0.209471
+ -1.52023    -1.37339   -1.13896
+ -0.4096     -0.209196  -0.195176
+ -0.106364    0.0        0.0
+  0.0648396   0.0        0.0</code></pre><h2 id="Real-data"><a class="docs-heading-anchor" href="#Real-data">Real data</a><a id="Real-data-1"></a><a class="docs-heading-anchor-permalink" href="#Real-data" title="Permalink"></a></h2><h3 id="Load-dataset"><a class="docs-heading-anchor" href="#Load-dataset">Load dataset</a><a id="Load-dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Load-dataset" title="Permalink"></a></h3><p>The <a href="../../data/cognitive.csv">cognitive dataset</a> contains data from a <a href="https://www.sciencedirect.com/science/article/pii/S0022316623025622">study</a> of the effect of an intervention in school lunches among schools in Kenya, accessed via the R package <a href="https://cran.r-project.org/web/packages/splmm/index.html"><code>splmm</code></a>. The data is longitudinal with measurements of students&#39; performance on various tests taken at different points in time. We will fit a model with random intercepts and random growth slopes for each student. Note that while this is a low-dimensional example (<span>$p &lt; n$</span>), the algorithm that this package implements was designed and tested with the high dimensional use-case (<span>$p &gt; n$</span>) in mind.</p><p>First, we load the data into Julia and form a categorical variable for the treatment in the study, which was the type of lunch served (assigned at the school level).</p><pre><code class="language-julia hljs">using CSV
 using DataFrames
 using CategoricalArrays
 cog_df = CSV.read(&quot;../data/cognitive.csv&quot;, DataFrame)
@@ -124,4 +122,4 @@ for i in [2,4,5,6]
     plot!(cog_df.year[mask], cog_df.ravens[mask], seriestype = :scatter, label = &quot;student $i&quot;, color = i)
     plot!(cog_df.year[mask], fitted(fit)[mask], seriestype = :line, color = i, linestyle = :dash, linewidth = 3, label = &quot;&quot;)
 end
-plot!(legend=:outerbottom, legendcolumns=3, xlabel = &quot;Year&quot;, ylabel = &quot;Ravens Score&quot;)</code></pre><img src="a0e6cd6c.svg" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../installation/">« Installation</a><a class="docs-footer-nextpage" href="../../lib/public_methods/">Public Methods and Types »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.7.0 on <span class="colophon-date" title="Tuesday 15 October 2024 20:53">Tuesday 15 October 2024</span>. Using Julia version 1.9.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+plot!(legend=:outerbottom, legendcolumns=3, xlabel = &quot;Year&quot;, ylabel = &quot;Ravens Score&quot;)</code></pre><img src="52f21d65.svg" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../installation/">« Installation</a><a class="docs-footer-nextpage" href="../../lib/public_methods/">Public Methods and Types »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.7.0 on <span class="colophon-date" title="Tuesday 15 October 2024 21:04">Tuesday 15 October 2024</span>. Using Julia version 1.9.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
