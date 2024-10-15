@@ -21,7 +21,7 @@ nothing
 Now we generate the response from these design matrices
 ```@example sim
 using Distributions
-
+using LinearAlgebra
 # Generate group assignments
 gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
 
@@ -48,6 +48,7 @@ X contains the variables whose effect we do not wish to penalize and a column fo
 By default, the variables in X (including the intercept) are assigned a random effect and by default, the assumed covariance structure of the random effects is diagonal. After some experimentation, we can set the penalty $\lambda$ to 60, which provides the sparsity we want. 
 
 ```@example sim
+using HighDimMixedModels
 out = hdmm(X, G, y, gr; λ = 60)
 ```
 
