@@ -1,67 +1,5 @@
 # Examples
 
-## Simulated data
-
-We first generate two design matrices. The first, `X`, will be low dimensional and consist of the predictors that will have associated random effects--this includes a column of constant 1s so that we include random intercepts. The second, `G`, is high dimensional and includes predictors whose effects we penalize.
-
-In addition, we generate a sparse vector of regression coefficient, $\beta$, whose non-zero components are centered at 0 and have a standard deviation of 1. 
-```@example sim
-using Random
-Random.seed!(420)
-g, n, p, q = 100, 5, 1000, 4 # #groups, #samples per group, #features, #features with random effect (including random intercept)
-N = n*g  # Total sample size
-X = [ones(N) randn(N, q-1)]
-G = randn(N, p-q)
-XG = [X G] 
-sd_signal = 1
-β = [sd_signal .* randn(10); zeros(p-10)]
-nothing # hide
-```
-
-Now we generate the response from these design matrices
-```@example sim
-using Distributions
-using LinearAlgebra
-# Generate group assignments
-gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
-
-# Generate random effects
-ψ = Diagonal(ones(q)) #random effects all have unit sd
-dist_b = MvNormal(zeros(q), ψ) 
-b = rand(dist_b, g)
-
-# Generate response
-y_fixed = XG * β 
-y = Vector{Float64}(undef, N)
-for (i, group) in enumerate(unique(gr))
-    group_ind = (gr .== group)
-    nᵢ = sum(group_ind)
-    Xᵢ = X[group_ind,:]
-    bᵢ = b[:,i]
-    yᵢ = Xᵢ*bᵢ + randn(nᵢ)
-    y[group_ind] = y_fixed[group_ind] + yᵢ
-end
-nothing # hide
-```
-We can now fit the model. We prepare design matrices, X and G, that the function requires. 
-X contains the variables whose effect we do not wish to penalize and a column for the intercept. These ar G is the high dimensional matrix with all the variables whose effect we do want to penalize. 
-By default, the variables in X (including the intercept) are assigned a random effect and by default, the assumed covariance structure of the random effects is diagonal. After some experimentation, we can set the penalty $\lambda$ to 60, which provides the sparsity we want. 
-
-```@example sim
-using HighDimMixedModels
-out = hdmm(X, G, y, gr; λ = 50)
-```
-
-Similary, we can fit a model with the LASSO penalty:
-
-```@example sim
-out_las = hdmm(X, G, y, gr; λ = 50, penalty = "lasso")
-```
-
-We can compare the estimation performance of the LASSO and SCAD by printing their estimates side by side with the true non-zero parameters values:
-```@example sim
-[β[1:10] out.fixef[1:10] out_las.fixef[1:10]]
-```
 
 ## Real data
 
@@ -143,4 +81,76 @@ for i in [2,4,5,6]
     plot!(cog_df.year[mask], fitted(fit)[mask], seriestype = :line, color = i, linestyle = :dash, linewidth = 3, label = "")
 end
 plot!(legend=:outerbottom, legendcolumns=3, xlabel = "Year", ylabel = "Ravens Score")
+```
+
+
+## Simulated data
+
+We first generate two design matrices. The first, `X`, will be low dimensional and consist of the predictors that will have associated random effects--this includes a column of constant 1s so that we include random intercepts. The second, `G`, is high dimensional and includes predictors whose effects we penalize.
+
+In addition, we generate a sparse vector of regression coefficient, $\beta$, whose non-zero components are centered at 0 and have a standard deviation of 1. 
+```@example sim
+using Random
+Random.seed!(420)
+g, n, p, q = 100, 5, 1000, 4 # #groups, #samples per group, #features, #features with random effect (including random intercept)
+N = n*g  # Total sample size
+X = [ones(N) randn(N, q-1)]
+G = randn(N, p-q)
+XG = [X G] 
+sd_signal = 1
+β = [sd_signal .* randn(10); zeros(p-10)]
+nothing # hide
+```
+
+Now we generate the response from these design matrices
+```@example sim
+using Distributions
+using LinearAlgebra
+# Generate group assignments
+gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
+
+# Generate random effects
+ψ = Diagonal(ones(q)) #random effects all have unit sd
+dist_b = MvNormal(zeros(q), ψ) 
+b = rand(dist_b, g)
+
+# Generate response
+y_fixed = XG * β 
+y = Vector{Float64}(undef, N)
+for (i, group) in enumerate(unique(gr))
+    group_ind = (gr .== group)
+    nᵢ = sum(group_ind)
+    Xᵢ = X[group_ind,:]
+    bᵢ = b[:,i]
+    yᵢ = Xᵢ*bᵢ + randn(nᵢ)
+    y[group_ind] = y_fixed[group_ind] + yᵢ
+end
+nothing # hide
+```
+
+We can now fit the model with our package. The default is to use the SCAD penalty
+
+```@example sim
+using HighDimMixedModels
+out_scad = hdmm(X, G, y, gr; λ = 40)
+```
+
+We can experiment with the penalty severity $\lambda$. $\lambda =40$ seems to provide us the sparsity we want without setting every penalized coefficient to 0.
+
+Similary, we can fit a model with the LASSO penalty:
+
+```@example sim
+out_las = hdmm(X, G, y, gr; λ = 40, penalty = "lasso")
+```
+
+We can compare the estimation performance of the LASSO and SCAD by printing their fixed effect coefficient estimates, saved at `out.fixef` or `out_las.fixef`, side by side with the true non-zero parameters values. Since the initialization of our descent algorithm, saved at `out.init_coef`, is obtained by fitting a (cross-validated) LASSO model that doesn't take the random effects into account, we also display these estimates to see how we improve by accounting for the random effects.
+
+```@example sim
+using DataFrames
+DataFrame(
+    :true => β[1:10], 
+    :lasso_no_random => out.fixef[1:10],
+    :lasso_with_random => out_las.fixef[1:10] 
+    :scad_with_random => out_scad.fixef[1:10]
+    )
 ```
