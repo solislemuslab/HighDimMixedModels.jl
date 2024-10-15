@@ -31,7 +31,7 @@ dist_b = MvNormal(zeros(q), ψ)
 b = rand(dist_b, g)
 
 # Generate response
-y_fixed = X*β 
+y_fixed = XG * β 
 y = Vector{Float64}(undef, N)
 for (i, group) in enumerate(unique(grp))
     group_ind = (gr .== group)
