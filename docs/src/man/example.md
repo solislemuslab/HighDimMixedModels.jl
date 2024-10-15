@@ -14,7 +14,7 @@ X = [ones(N) randn(N, q-1)]
 G = randn(N, p-q)
 XG = [X G] 
 sd_signal = 1
-β = [0; sd_signal .* randn(10); zeros(p-10)]
+β = [sd_signal .* randn(10); zeros(p-10)]
 nothing
 ```
 
@@ -26,7 +26,7 @@ using LinearAlgebra
 gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
 
 # Generate random effects
-ψ = Diagonal(ones(4)) #random effects all have unit sd
+ψ = Diagonal(ones(q)) #random effects all have unit sd
 dist_b = MvNormal(zeros(q), ψ) 
 b = rand(dist_b, g)
 
@@ -60,9 +60,8 @@ out_las = hdmm(X, G, y, gr; λ = 60, penalty = "lasso")
 
 We can compare the estimation performance of the LASSO and SCAD by printing their estimates side by side with the true non-zero parameters values:
 ```@example sim
-[β[1:11] out[1:11] out_las[1:11]]
+[β[1:10] out[1:10] out_las[1:10]]
 ```
-The first entry is the intercept, and the next ten correspond to the non-zero effect. 
 
 ## Real data
 
