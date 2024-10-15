@@ -33,7 +33,7 @@ b = rand(dist_b, g)
 # Generate response
 y_fixed = XG * β 
 y = Vector{Float64}(undef, N)
-for (i, group) in enumerate(unique(grp))
+for (i, group) in enumerate(unique(gr))
     group_ind = (gr .== group)
     nᵢ = sum(group_ind)
     Xᵢ = X[group_ind,:]
