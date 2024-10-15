@@ -60,7 +60,7 @@ out_las = hdmm(X, G, y, gr; λ = 60, penalty = "lasso")
 
 We can compare the estimation performance of the LASSO and SCAD by printing their estimates side by side with the true non-zero parameters values:
 ```@example sim
-[β[1:10] out[1:10] out_las[1:10]]
+[β[1:10] out.fixef[1:10] out_las.fixef[1:10]]
 ```
 
 ## Real data
