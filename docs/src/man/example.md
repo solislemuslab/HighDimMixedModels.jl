@@ -38,7 +38,7 @@ for (i, group) in enumerate(unique(gr))
     nᵢ = sum(group_ind)
     Xᵢ = X[group_ind,:]
     bᵢ = b[:,i]
-    yᵢ = Zᵢ*bᵢ + randn(nᵢ)
+    yᵢ = Xᵢ*bᵢ + randn(nᵢ)
     y[group_ind] = y_fixed[group_ind] + yᵢ
 end
 nothing
