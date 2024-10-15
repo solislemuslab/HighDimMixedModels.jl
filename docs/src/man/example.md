@@ -110,7 +110,7 @@ using LinearAlgebra
 gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
 
 # Generate random effects
-ψ = Diagonal(ones(q)) #random effects all have unit sd
+ψ = Diagonal(1:4) #random effects covariances
 dist_b = MvNormal(zeros(q), ψ) 
 b = rand(dist_b, g)
 
@@ -132,15 +132,15 @@ We can now fit the model with our package. The default is to use the SCAD penalt
 
 ```@example sim
 using HighDimMixedModels
-out_scad = hdmm(X, G, y, gr; λ = 40)
+out_scad = hdmm(X, G, y, gr; λ = 50)
 ```
 
-We can experiment with the penalty severity $\lambda$. $\lambda =40$ seems to provide us the sparsity we want without setting every penalized coefficient to 0.
+We can experiment with the penalty severity $\lambda$. $\lambda = 50$ seems to provide us the sparsity we want without setting every penalized coefficient to 0.
 
 Similary, we can fit a model with the LASSO penalty:
 
 ```@example sim
-out_las = hdmm(X, G, y, gr; λ = 40, penalty = "lasso")
+out_las = hdmm(X, G, y, gr; λ = 50, penalty = "lasso")
 ```
 
 We can compare the estimation performance of the LASSO and SCAD by printing their fixed effect coefficient estimates, saved at `out.fixef` or `out_las.fixef`, side by side with the true non-zero parameters values. Since the initialization of our descent algorithm, saved at `out.init_coef`, is obtained by fitting a (cross-validated) LASSO model that doesn't take the random effects into account, we also display these estimates to see how we improve by accounting for the random effects.
@@ -148,7 +148,7 @@ We can compare the estimation performance of the LASSO and SCAD by printing thei
 ```@example sim
 using DataFrames
 DataFrame(
-    :true => β[1:10], 
+    :true_coefs => β[1:10], 
     :lasso_no_random => out_las.init_coef.βstart[1:10],
     :lasso_with_random => out_las.fixef[1:10], 
     :scad_with_random => out_scad.fixef[1:10]
