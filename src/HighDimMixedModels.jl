@@ -349,14 +349,18 @@ function hdmm(
         fct_iter = get_cost(neglike_iter, βiter[(q+1):end], penalty, λwtd[(q+1):end], scada)
         control.trace && println("After $counter cycles, objective is: $fct_iter")
 
-        #Check convergence
+        # Check convergence
         convβ = norm(βiter - βold) / (1 + norm(βiter))
         conv_varp = norm(varp_iter - varp_old) / (1 + norm(varp_iter))
-        conv_fct = abs(fct_iter - fct_old) / (1 + abs(fct_iter))
+        if penalty == "scad"
+            conv_fct = 0  # Do not check function convergence for SCAD
+        else
+            conv_fct = abs(fct_iter - fct_old) / (1 + abs(fct_iter))
+        end
 
-        #If convergence criterion satisfied, then next iteration, update all fixed effects
-        #If parameters still doesn't change after that, then the while condition won't get satisfied 
-        #because do_all will be true
+        # If convergence criterion satisfied, then next iteration, update all fixed effects
+        # If parameters still don't change after that, then the while condition won't get satisfied 
+        # because do_all will be true
         if max(convβ, conv_varp, conv_fct) <= control.tol
             counter_in = 0
         end

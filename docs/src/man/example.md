@@ -110,7 +110,7 @@ using LinearAlgebra
 gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
 
 # Generate random effects
-ψ = Diagonal(1:4) #random effects covariances
+ψ = Diagonal(1:4) #random effects variances
 dist_b = MvNormal(zeros(q), ψ) 
 b = rand(dist_b, g)
 
