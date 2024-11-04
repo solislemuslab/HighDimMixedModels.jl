@@ -110,7 +110,7 @@ We now form three matrices that will be accepted as input by `hdmm()`: `X` is a 
 ```@example cog
 X = model_mat[:, 1:5] # Non-penalized columns (one for intercept, one for year, 3 for treatment categories) 
 Z = X[:, 1:2] # Random effect columns (one for intercept, one for year)
-G = model_mat[:, 3:end] # Set of covariates whose effects are regularized
+G = model_mat[:, 6:end] # Set of covariates whose effects are regularized
 nothing # hide
 ```
 
