@@ -228,7 +228,7 @@ function hdmm(
         #------------------------------------------------------------------------------------
 
         #We'll only update fixed effect parameters in "active_set"
-        #See  page 53 of lmmlasso dissertation and Meier et al. (2008) and Friedman et al. (2010).
+        #See  page 53 of lmmlasso dissertation 
         active_set = findall(βiter .!= 0)
         control.trace && println("And size of active set is: $(length(active_set))")
         # If the active set is larger than half the total sample size and we've iterated at least once,
@@ -394,7 +394,7 @@ function hdmm(
         βstart[1] = βstart[1] - sum(meansG' .* βstart[(q+1):end])
         βiter[(q+1):end] = βiter[(q+1):end] ./ sdsG'
         βiter[1] = βiter[1] - sum(meansG' .* βiter[(q+1):end])
-        G = G .* sdsG .+ sdsG 
+        G = G .* sdsG .+ meansG 
         XG = [X G]
         XGgrp = Matrix[]
         for group in unique(grp)
