@@ -46,19 +46,19 @@ end
 nothing # hide
 ```
 
-We can now fit the model with our package. The default is to use the SCAD penalty
+We can now fit the model with the function `hdmm` exported by the package. It accepts the two design matrices, the response, and the group id as required positional arguments, and returns the fitted model. The default is to use the SCAD penalty and we choose penalty severity $\lambda = 25$.
 
 ```@example sim
 using HighDimMixedModels
-out_scad = hdmm(X, G, y, gr; λ = 30)
+out_scad = hdmm(X, G, y, gr; λ = 25)
 ```
 
-$\lambda = 30$ yields a sparse model but without every penalized coefficient set to 0. We can experiment with the penalty severity $\lambda$ to find the model that minimizes `out_scad.bic`.
+We see $\lambda = 25$ yields a sparse model but without every penalized coefficient set to 0. In practice, we'd want to experiment with the penalty severity $\lambda$ to find the model that minimizes `out_scad.bic`.
 
 Similarly, we can fit a model with the LASSO penalty:
 
 ```@example sim
-out_las = hdmm(X, G, y, gr; λ = 30, penalty = "lasso")
+out_las = hdmm(X, G, y, gr; λ = 25, penalty = "lasso")
 ```
 
 We can compare the estimation performance of the LASSO and SCAD by printing their fixed effect coefficient estimates, saved at `out.fixef` or `out_las.fixef`, side by side with the true non-zero parameters values. Since the initialization of our descent algorithm, saved at `out.init_coef`, is obtained by fitting a (cross-validated) LASSO model that doesn't take the random effects into account, we also display these estimates to see how we improve by accounting for the random effects.
@@ -105,7 +105,7 @@ model_mat = ModelMatrix(model_frame).m
 nothing # hide
 ```
 
-We now form three matrices that will be accepted as input by `hdmm()`: `X` is a matrix whose columns will receive non-penalized fixed effects, `G` is a matrix whose columns will receive penalized fixed effects, and `Z` is a matrix whose columns will receive random effects. Almost always, `Z` will be a subset of `X` and its default in `hdmm()` is to equal `X`.  In our case, however, we want to leave unpenalized all the treatment dummy variables, as well as the control intercept and time variable, but we only want to assign random effects to the control intercept and the time variable, so we have to specify `Z` explicitly. 
+We now form three matrices that will be accepted as input by `hdmm()`: `X` is a matrix whose columns will receive non-penalized fixed effects, `G` is a matrix whose columns will receive penalized fixed effects, and `Z` is a matrix whose columns will receive random effects. Almost always, `Z` will be a subset of `X` and its default in `hdmm()` is to equal `X`. In our case, however, we want to leave unpenalized all the treatment dummy variables, as well as the control intercept and time variable, but we only want to assign random effects to the control intercept and the time variable, so we have to specify `Z` explicitly. 
 
 ```@example cog
 X = model_mat[:, 1:5] # Non-penalized columns (one for intercept, one for year, 3 for treatment categories) 
@@ -122,19 +122,18 @@ y = cog_df.ravens
 nothing # hide
 ```
 
-
 ### Fitting model
-The main function in the package is `hdmm()`, which accepts the two design matrices, the response, and the group id as required positional arguments, and returns the fitted model:
+
 ```@example cog
 using HighDimMixedModels
 fit = hdmm(X, G, y, student_id, Z)
 ```
 
-The function has a number of keyword arguments that can be specified to modify the defaults--see the [documentation](https://solislemuslab.github.io/HighDimMixedModels.jl/dev/lib/public_methods/#HighDimMixedModels.hdmm). For example, by default, we fit a model with the SCAD penalty, which produces less bias. To apply the LASSO penalty, specify `penalty = "lasso"` in the call. Also note that the default value of $\lambda$ (the hyperparameter that controls the degree of penalization) is 10. Since the default (unless `standardize = false`) is to standardize the design matrices before running the algorithm, this is how much the coefficients of the standardized predictors are penalized. In practice, you can and should try fitting the model for several different choices of $\lambda$ and choose the fit that leads to the lowest `fit.BIC`.
+Note that the default value of $\lambda$ (the hyperparameter that controls the degree of penalization) is 10. Since the default (unless `standardize = false`) is also to standardize the penalized design matrix `G` before fitting the model, this is how much the coefficients of the standardized predictors are penalized. In practice, you can and should try fitting the model for several different choices of $\lambda$ and choose the fit that leads to the lowest `fit.bic`.
 
 ### Inspecting model
 
-The object `fit` which is returned by `hdmm()` is a struct with fields providing all relevant information about the model fit. These can be accessed using the `dot` notation, e.g. `fit.fixef` to retrieve all the fixed effect estimates (including those set to 0) and `fit.log_like` to get the log likelihood at the estimates. To print all the fields stored in the object, you can type `fit.` followed by the tab key or check the [documentation for the struct](https://solislemuslab.github.io/HighDimMixedModels.jl/dev/lib/public_methods/#HighDimMixedModels.HDMModel).
+The object `fit` which is returned by `hdmm()` is a struct with fields providing all relevant information about the model fit. These can be accessed using dot syntax, e.g. `fit.fixef` to retrieve all the fixed effect estimates (including those set to 0) and `fit.log_like` to get the log likelihood at the estimates. To print all the fields stored in the object, you can type `fit.` followed by the tab key or check the [documentation for the struct](https://solislemuslab.github.io/HighDimMixedModels.jl/dev/lib/public_methods/#HighDimMixedModels.HDMModel).
 
 Several model inspection functions from [StatsBase.jl](https://github.com/JuliaStats/StatsBase.jl/tree/master) are also available, such as `residuals(fit)` and `fitted(fit)`. Note that these fitted values and residuals take into account the random effects by incorporating the best prediction of these random effects (BLUPs) for each student into the predictions. 
 
