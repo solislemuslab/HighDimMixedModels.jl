@@ -36,6 +36,6 @@ If you use `HighDimMixedModels.jl` in your work, we kindly ask that you cite
 author = {Gorstein, E. and Aghdam, R. and Sol'{i}s-Lemus, C.},
 year = {2024},
 title = {{HighDimMixedModels.jl: Robust High Dimensional Mixed Models across Omics Data}},
-journal = {In preparation}
+journal = {bioRxiv}
 }
 ```
