@@ -4,7 +4,6 @@ module HighDimMixedModels
 using Statistics
 using LinearAlgebra
 using Random
-using InvertedIndices
 using Optim: Optim, optimize
 using Parameters: @with_kw
 using MLBase: Kfold

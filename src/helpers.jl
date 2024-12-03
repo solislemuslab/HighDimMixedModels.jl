@@ -26,7 +26,7 @@ function invV!(invVgrp, Zgrp, L, σ²)
         Vᵢ = Zᵢ * Ψ * Zᵢ' + σ² * I(nᵢ)
         # Need to make symmetric: because of floating point arithmetic, 
         # cholesky will fail to recognize the matrix as symmetric
-        invVgrp[i] = inv(cholesky(Symmetric(Vᵢ)))
+        invVgrp[i] = inv(cholesky!(Symmetric(Vᵢ)))
     end
 
 end
@@ -177,8 +177,8 @@ We then split into groups and calculate (y-ỹ)' \\* invV \\* X[:,j] for each gr
 """
 function special_quad(XG, y, β, j, invVgrp, XGgrp, grp)
 
-    XGmiss = XG[:, Not(j)]
-    βmiss = β[Not(j)]
+    XGmiss = @views XG[:, [1:j-1 ; j+1:end]]
+    βmiss = @views β[[1:j-1; j+1:end]]
     resid = y - XGmiss * βmiss
 
 
