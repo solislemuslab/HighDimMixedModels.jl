@@ -158,7 +158,7 @@ function hdmm(
         #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
         lassopath = Lasso.fit(
             Lasso.LassoModel,
-            XG[:, Not(1)], #Function for LASSO fitting accepts design matrix without intercept column and assumes you want intercept fit
+            XG[:, 2:end], #Function for LASSO fitting accepts design matrix without intercept column and assumes you want intercept fit
             y;
             maxncoef = max(2 * N, 2 * p), #See https://github.com/JuliaStats/Lasso.jl/issues/54
             penalty_factor = [zeros(q - 1); 1 ./ wts], # Don't penalize first q-1 covariates (q-1 because intercept has been removed)
