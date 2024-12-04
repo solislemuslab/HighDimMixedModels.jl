@@ -181,7 +181,6 @@ function special_quad(XG, y, β, j, invVgrp, XGgrp, grp)
     βmiss = @views β[[1:j-1; j+1:end]]
     resid = y - XGmiss * βmiss
 
-
     residgrp = [resid[grp.==group] for group in unique(grp)]
 
     quads =
