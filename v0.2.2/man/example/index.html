@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Example · HighDimMixedModels.jl</title><meta name="title" content="Example · HighDimMixedModels.jl"/><meta property="og:title" content="Example · HighDimMixedModels.jl"/><meta property="twitter:title" content="Example · HighDimMixedModels.jl"/><meta name="description" content="Documentation for HighDimMixedModels.jl."/><meta property="og:description" content="Documentation for HighDimMixedModels.jl."/><meta property="twitter:description" content="Documentation for HighDimMixedModels.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">HighDimMixedModels.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Manual</span><ul><li><a class="tocitem" href="../installation/">Installation</a></li><li class="is-active"><a class="tocitem" href>Example</a><ul class="internal"><li><a class="tocitem" href="#Simulated-data"><span>Simulated data</span></a></li><li><a class="tocitem" href="#Real-data"><span>Real data</span></a></li></ul></li></ul></li><li><span class="tocitem">Library</span><ul><li><a class="tocitem" href="../../lib/public_methods/">Public Methods and Types</a></li><li><a class="tocitem" href="../../lib/internal_methods/">Internal Methods and Types</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Manual</a></li><li class="is-active"><a href>Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/solislemuslab/HighDimMixedModels.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/solislemuslab/HighDimMixedModels.jl/blob/main/docs/src/man/example.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Examples"><a class="docs-heading-anchor" href="#Examples">Examples</a><a id="Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Examples" title="Permalink"></a></h1><p>We&#39;ll first shown an example with simulated data where we know the ground-truth parameters, and then show an example with real data.</p><h2 id="Simulated-data"><a class="docs-heading-anchor" href="#Simulated-data">Simulated data</a><a id="Simulated-data-1"></a><a class="docs-heading-anchor-permalink" href="#Simulated-data" title="Permalink"></a></h2><p>We first generate two design matrices. The first, <code>X</code>, will be low dimensional and consist of the predictors that will have associated random effects–this includes a column of constant 1s so that we include random intercepts. The second, <code>G</code>, is high dimensional and includes predictors whose coefficients we want to penalize.</p><p>We also generate a sparse vector of ground-truth regression coefficient, <span>$\beta$</span>, whose non-zero components are centered at 0 and have a standard deviation of 1. </p><pre><code class="language-julia hljs">using Random
+Random.seed!(420)
+g, n, p, q = 50, 5, 1000, 4 # #groups, #samples per group, #features, #features with random effect (including random intercept)
+N = n*g  # Total sample size
+X = [ones(N) randn(N, q-1)]
+G = randn(N, p-q)
+XG = [X G]
+sd_signal = 1
+β = [sd_signal .* randn(10); zeros(p-10)]</code></pre><p>Now we generate the response from these design matrices</p><pre><code class="language-julia hljs">using Distributions
+using LinearAlgebra
+# Generate group assignments
+gr = string.( vcat( [fill(i, n) for i in 1:g]... ) )
+
+# Generate random effects
+ψ = Diagonal(1:4) #random effects variances
+dist_b = MvNormal(zeros(q), ψ)
+b = rand(dist_b, g)
+
+# Generate response
+y_fixed = XG * β
+y = Vector{Float64}(undef, N)
+for (i, group) in enumerate(unique(gr))
+    group_ind = (gr .== group)
+    nᵢ = sum(group_ind)
+    Xᵢ = X[group_ind,:]
+    bᵢ = b[:,i]
+    yᵢ = Xᵢ*bᵢ + randn(nᵢ)
+    y[group_ind] = y_fixed[group_ind] + yᵢ
+end</code></pre><p>We can now fit the model with the function <code>hdmm</code> exported by the package. It accepts the two design matrices, the response, and the group id as required positional arguments, and returns the fitted model. The default is to use the SCAD penalty and we choose penalty severity <span>$\lambda = 25$</span>.</p><pre><code class="language-julia hljs">using HighDimMixedModels
+out_scad = hdmm(X, G, y, gr; λ = 25)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 250 observations
+Log-likelihood at convergence: -571.99
+Random effect covariance matrix:
+4×4 Matrix{Float64}:
+ 1.1179  0.0      0.0      0.0
+ 0.0     2.16049  0.0      0.0
+ 0.0     0.0      3.67072  0.0
+ 0.0     0.0      0.0      3.76285
+Estimated 11 non-zero fixed effects:
+────────────────
+        Estimate
+────────────────
+1     2.10736
+2     1.40048
+3    -2.33592
+4    -1.35909
+8     2.07961
+9     1.99035
+10   -0.406674
+92   -0.0970249
+400  -0.0392752
+495  -0.00795999
+729  -0.00415191
+────────────────
+Estimated σ²: 1.2518
+</code></pre><p>We see <span>$\lambda = 25$</span> yields a sparse model but without every penalized coefficient set to 0. In practice, we&#39;d want to experiment with the penalty severity <span>$\lambda$</span> to find the model that minimizes <code>out_scad.bic</code>.</p><p>Similarly, we can fit a model with the LASSO penalty:</p><pre><code class="language-julia hljs">out_las = hdmm(X, G, y, gr; λ = 25, penalty = &quot;lasso&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 250 observations
+Log-likelihood at convergence: -589.28
+Random effect covariance matrix:
+4×4 Matrix{Float64}:
+ 0.918185  0.0      0.0      0.0
+ 0.0       2.22578  0.0      0.0
+ 0.0       0.0      3.59531  0.0
+ 0.0       0.0      0.0      3.8829
+Estimated 8 non-zero fixed effects:
+──────────────
+      Estimate
+──────────────
+1    2.13855
+2    1.40783
+3   -2.37984
+4   -1.27544
+8    1.6826
+9    1.60603
+10  -0.28122
+92  -0.0383302
+──────────────
+Estimated σ²: 1.8002
+</code></pre><p>We can compare the estimation performance of the LASSO and SCAD by printing their fixed effect coefficient estimates, saved at <code>out.fixef</code> or <code>out_las.fixef</code>, side by side with the true non-zero parameters values. Since the initialization of our descent algorithm, saved at <code>out.init_coef</code>, is obtained by fitting a (cross-validated) LASSO model that doesn&#39;t take the random effects into account, we also display these estimates to see how we improve by accounting for the random effects.</p><pre><code class="language-julia hljs">using DataFrames
+DataFrame(
+    :true_coefs =&gt; β[1:10],
+    :lasso_no_random =&gt; out_las.init_coef.βstart[1:10],
+    :lasso_with_random =&gt; out_las.fixef[1:10],
+    :scad_with_random =&gt; out_scad.fixef[1:10]
+    )</code></pre><div><div style = "float: left;"><span>10×4 DataFrame</span></div><div style = "clear: both;"></div></div><div class = "data-frame" style = "overflow-x: scroll;"><table class = "data-frame" style = "margin-bottom: 6px;"><thead><tr class = "header"><th class = "rowNumber" style = "font-weight: bold; text-align: right;">Row</th><th style = "text-align: left;">true_coefs</th><th style = "text-align: left;">lasso_no_random</th><th style = "text-align: left;">lasso_with_random</th><th style = "text-align: left;">scad_with_random</th></tr><tr class = "subheader headerLastRow"><th class = "rowNumber" style = "font-weight: bold; text-align: right;"></th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th><th title = "Float64" style = "text-align: left;">Float64</th></tr></thead><tbody><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">1</td><td style = "text-align: right;">2.21272</td><td style = "text-align: right;">2.20724</td><td style = "text-align: right;">2.13855</td><td style = "text-align: right;">2.10736</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">2</td><td style = "text-align: right;">1.06012</td><td style = "text-align: right;">1.38725</td><td style = "text-align: right;">1.40783</td><td style = "text-align: right;">1.40048</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">3</td><td style = "text-align: right;">-2.18088</td><td style = "text-align: right;">-2.498</td><td style = "text-align: right;">-2.37984</td><td style = "text-align: right;">-2.33592</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">4</td><td style = "text-align: right;">-1.07465</td><td style = "text-align: right;">-1.38641</td><td style = "text-align: right;">-1.27544</td><td style = "text-align: right;">-1.35909</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">5</td><td style = "text-align: right;">0.408895</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">6</td><td style = "text-align: right;">-0.213854</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">-0.0</td><td style = "text-align: right;">-0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">7</td><td style = "text-align: right;">0.062865</td><td style = "text-align: right;">0.0</td><td style = "text-align: right;">-0.0</td><td style = "text-align: right;">-0.0</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">8</td><td style = "text-align: right;">2.20212</td><td style = "text-align: right;">1.73976</td><td style = "text-align: right;">1.6826</td><td style = "text-align: right;">2.07961</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">9</td><td style = "text-align: right;">2.08367</td><td style = "text-align: right;">1.39297</td><td style = "text-align: right;">1.60603</td><td style = "text-align: right;">1.99035</td></tr><tr><td class = "rowNumber" style = "font-weight: bold; text-align: right;">10</td><td style = "text-align: right;">-0.692734</td><td style = "text-align: right;">-0.0403858</td><td style = "text-align: right;">-0.28122</td><td style = "text-align: right;">-0.406674</td></tr></tbody></table></div><h2 id="Real-data"><a class="docs-heading-anchor" href="#Real-data">Real data</a><a id="Real-data-1"></a><a class="docs-heading-anchor-permalink" href="#Real-data" title="Permalink"></a></h2><h3 id="Load-dataset"><a class="docs-heading-anchor" href="#Load-dataset">Load dataset</a><a id="Load-dataset-1"></a><a class="docs-heading-anchor-permalink" href="#Load-dataset" title="Permalink"></a></h3><p>The <a href="../../data/cognitive.csv">cognitive dataset</a> contains data from a <a href="https://www.sciencedirect.com/science/article/pii/S0022316623025622">study</a> of the effect of an intervention in school lunches among schools in Kenya, accessed via the R package <a href="https://cran.r-project.org/web/packages/splmm/index.html"><code>splmm</code></a>. The data is longitudinal with measurements of students&#39; performance on various tests taken at different points in time. We will fit a model with random intercepts and random growth slopes for each student. Note that while this is a low-dimensional example (<span>$p &lt; n$</span>), the algorithm that this package implements was designed and tested with the high dimensional use-case (<span>$p &gt; n$</span>) in mind.</p><p>First, we load the data into Julia, remove the two outlier students with Ravens scores (our response variable) below 10, and form a categorical variable for the treatment in the study, which was the type of lunch served (assigned at the school level).</p><pre><code class="language-julia hljs">using CSV
+using DataFrames
+using CategoricalArrays
+cog_df = CSV.read(&quot;../data/cognitive.csv&quot;, DataFrame)
+# remove outlier students
+outly_mask = cog_df.id .∈ ([310, 392],)
+cog_df = cog_df[.!outly_mask, :]
+# form categorical variable for treatment
+cog_df.treatment = categorical(cog_df.treatment, levels=[&quot;control&quot;, &quot;calorie&quot;, &quot;meat&quot;, &quot;milk&quot;])</code></pre><h3 id="Extract-model-matrices,-cluster-ids,-and-response-vector"><a class="docs-heading-anchor" href="#Extract-model-matrices,-cluster-ids,-and-response-vector">Extract model matrices, cluster ids, and response vector</a><a id="Extract-model-matrices,-cluster-ids,-and-response-vector-1"></a><a class="docs-heading-anchor-permalink" href="#Extract-model-matrices,-cluster-ids,-and-response-vector" title="Permalink"></a></h3><p>Next we form model matrices with the help of the <a href="https://juliastats.org/StatsModels.jl/stable/formula/#The-@formula-language"><code>StatsModels</code></a> formula syntax:</p><pre><code class="language-julia hljs">using StatsModels
+f = @formula(ravens ~ 1 + year + treatment + sex + age_at_time0 +
+                      height + weight + head_circ + ses + mom_read + mom_write + mom_edu)
+model_frame = ModelFrame(f, cog_df)
+model_mat = ModelMatrix(model_frame).m</code></pre><p>We now form three matrices that will be accepted as input by <code>hdmm()</code>: <code>X</code> is a matrix whose columns will receive non-penalized fixed effects, <code>G</code> is a matrix whose columns will receive penalized fixed effects, and <code>Z</code> is a matrix whose columns will receive random effects. Almost always, <code>Z</code> will be a subset of <code>X</code> and its default in <code>hdmm()</code> is to equal <code>X</code>. In our case, however, we want to leave unpenalized all the treatment dummy variables, as well as the control intercept and time variable, but we only want to assign random effects to the control intercept and the time variable, so we have to specify <code>Z</code> explicitly. </p><pre><code class="language-julia hljs">X = model_mat[:, 1:5] # Non-penalized columns (one for intercept, one for year, 3 for treatment categories)
+Z = X[:, 1:2] # Random effect columns (one for intercept, one for year)
+G = model_mat[:, 6:end] # Set of covariates whose effects are regularized</code></pre><p>Finally, we get the cluster (in this case, student) ids and the response, the students&#39; Ravens test scores. </p><pre><code class="language-julia hljs">student_id = cog_df.id
+y = cog_df.ravens</code></pre><h3 id="Fitting-model"><a class="docs-heading-anchor" href="#Fitting-model">Fitting model</a><a id="Fitting-model-1"></a><a class="docs-heading-anchor-permalink" href="#Fitting-model" title="Permalink"></a></h3><pre><code class="language-julia hljs">using HighDimMixedModels
+fit = hdmm(X, G, y, student_id, Z)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">HDMModel fit with 1552 observations
+Log-likelihood at convergence: -3674.9
+Random effect covariance matrix:
+2×2 Matrix{Float64}:
+ 1.17605  0.0
+ 0.0      0.426147
+Estimated 8 non-zero fixed effects:
+──────────────
+      Estimate
+──────────────
+1   10.3625
+2    1.07196
+3   -0.0779354
+4    0.165724
+5   -0.283943
+7    0.0123686
+10   0.138166
+13   0.0101905
+──────────────
+Estimated σ²: 5.4917
+</code></pre><p>Note that the default value of <span>$\lambda$</span> (the hyperparameter that controls the degree of penalization) is 10. Since the default (unless <code>standardize = false</code>) is also to standardize the penalized design matrix <code>G</code> before fitting the model, this is how much the coefficients of the standardized predictors are penalized. In practice, you can and should try fitting the model for several different choices of <span>$\lambda$</span> and choose the fit that leads to the lowest <code>fit.bic</code>.</p><h3 id="Inspecting-model"><a class="docs-heading-anchor" href="#Inspecting-model">Inspecting model</a><a id="Inspecting-model-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-model" title="Permalink"></a></h3><p>The object <code>fit</code> which is returned by <code>hdmm()</code> is a struct with fields providing all relevant information about the model fit. These can be accessed using dot syntax, e.g. <code>fit.fixef</code> to retrieve all the fixed effect estimates (including those set to 0) and <code>fit.log_like</code> to get the log likelihood at the estimates. To print all the fields stored in the object, you can type <code>fit.</code> followed by the tab key or check the <a href="https://solislemuslab.github.io/HighDimMixedModels.jl/dev/lib/public_methods/#HighDimMixedModels.HDMModel">documentation for the struct</a>.</p><p>Several model inspection functions from <a href="https://github.com/JuliaStats/StatsBase.jl/tree/master">StatsBase.jl</a> are also available, such as <code>residuals(fit)</code> and <code>fitted(fit)</code>. Note that these fitted values and residuals take into account the random effects by incorporating the best prediction of these random effects (BLUPs) for each student into the predictions. </p><p>To print a table with only the selected coefficients (i.e. those that are not set to 0), use the function <code>coeftable()</code>. The names of these variables will appear alongside their estimates if you pass them as a second argument:</p><pre><code class="language-julia hljs">coeftable(fit, coefnames(model_frame))</code></pre><table><tr><th style="text-align: left"></th><th style="text-align: left">Estimate</th></tr><tr><td style="text-align: left">(Intercept)</td><td style="text-align: left">10.3625</td></tr><tr><td style="text-align: left">year</td><td style="text-align: left">1.07196</td></tr><tr><td style="text-align: left">treatment: calorie</td><td style="text-align: left">-0.0779354</td></tr><tr><td style="text-align: left">treatment: meat</td><td style="text-align: left">0.165724</td></tr><tr><td style="text-align: left">treatment: milk</td><td style="text-align: left">-0.283943</td></tr><tr><td style="text-align: left">age<em>at</em>time0</td><td style="text-align: left">0.0123686</td></tr><tr><td style="text-align: left">head_circ</td><td style="text-align: left">0.138166</td></tr><tr><td style="text-align: left">mom_write</td><td style="text-align: left">0.0101905</td></tr></table><h3 id="Plotting-model"><a class="docs-heading-anchor" href="#Plotting-model">Plotting model</a><a id="Plotting-model-1"></a><a class="docs-heading-anchor-permalink" href="#Plotting-model" title="Permalink"></a></h3><p>Here, we show how to plot the observed scores and our model&#39;s predictions for five different students over time:</p><pre><code class="language-julia hljs">using Plots
+mask = student_id .== 1
+plot(cog_df.year[mask], cog_df.ravens[mask], seriestype = :scatter, label = &quot;student 1&quot;, color = 1 )
+plot!(cog_df.year[mask], fitted(fit)[mask], seriestype = :line, color = 1, linestyle = :dash, linewidth = 3, label = &quot;&quot;)
+for i in [2,4,5,6]
+    mask = student_id .== i
+    # add student to plot
+    plot!(cog_df.year[mask], cog_df.ravens[mask], seriestype = :scatter, label = &quot;student $i&quot;, color = i)
+    plot!(cog_df.year[mask], fitted(fit)[mask], seriestype = :line, color = i, linestyle = :dash, linewidth = 3, label = &quot;&quot;)
+end
+plot!(legend=:outerbottom, legendcolumns=3, xlabel = &quot;Year&quot;, ylabel = &quot;Ravens Score&quot;)</code></pre><img src="dba77ebe.svg" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../installation/">« Installation</a><a class="docs-footer-nextpage" href="../../lib/public_methods/">Public Methods and Types »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.7.0 on <span class="colophon-date" title="Wednesday 4 December 2024 00:41">Wednesday 4 December 2024</span>. Using Julia version 1.9.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
