@@ -193,6 +193,7 @@ function hdmm(
 
     #Algorithm allocations
     βiter = copy(βstart)
+    res_iter = y - XG * βiter
     Liter = copy(Lstart)
     σ²iter = σ²start
     Lvec_iter = ndims(Liter) == 2 ? vec(Liter) : Liter #L as vector if ψstr == "sym"
@@ -255,8 +256,9 @@ function hdmm(
 
         #Update fixed effect parameters that are in active_set
         for j in active_set
+
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
-            cut = special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp)
+            cut = special_quad(res_iter, XG[:,j], βiter[j], grp, invVgrp, XGgrp)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:q
@@ -286,6 +288,8 @@ function hdmm(
                     control,
                 )
             end
+            # update residuals
+            res_iter .-= (βiter[j] - βold[j])*XG[:, j] 
         end
         
         #---Optimization with respect to random effect parameters ----------------------------

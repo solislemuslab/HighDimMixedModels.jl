@@ -175,16 +175,14 @@ Calculate (y-ỹ)' \\* invV \\* X[:,j], where ỹ are the fitted values if we ig
 To improve perforamce, we calculate ỹ at once with the entire dataset.
 We then split into groups and calculate (y-ỹ)' \\* invV \\* X[:,j] for each group
 """
-function special_quad(XG, y, β, j, invVgrp, XGgrp, grp)
+function special_quad(res, XGj, βj, grp, invVgrp, XGgrp)
 
-    XGmiss = @views XG[:, [1:j-1 ; j+1:end]]
-    βmiss = @views β[[1:j-1; j+1:end]]
-    resid = y - XGmiss * βmiss
+    res_miss = res + XGj*βj
 
-    residgrp = [resid[grp.==group] for group in unique(grp)]
+    res_miss_grp = [res_miss[grp.==group] for group in unique(grp)]
 
     quads =
-        [resid' * invV * XG[:, j] for (resid, invV, XG) in zip(residgrp, invVgrp, XGgrp)]
+        [resid' * invV * XG[:, j] for (resid, invV, XG) in zip(res_miss_grp, invVgrp, XGgrp)]
 
     return sum(quads)
 
