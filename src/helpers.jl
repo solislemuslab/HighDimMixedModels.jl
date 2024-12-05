@@ -175,7 +175,7 @@ Calculate (y-ỹ)' \\* invV \\* X[:,j], where ỹ are the fitted values if we ig
 To improve perforamce, we calculate ỹ at once with the entire dataset.
 We then split into groups and calculate (y-ỹ)' \\* invV \\* X[:,j] for each group
 """
-function special_quad(res, XGj, βj, grp, invVgrp, XGgrp)
+function special_quad(res, XGj, βj, j, grp, invVgrp, XGgrp)
 
     res_miss = res + XGj*βj
 

@@ -258,7 +258,7 @@ function hdmm(
         for j in active_set
 
             # we also pass XG and y instead of XGgrp and ygrp for reasons of efficiency--see definition of special_quad
-            cut = special_quad(res_iter, XG[:,j], βiter[j], grp, invVgrp, XGgrp)
+            cut = special_quad(res_iter, XG[:,j], βiter[j], j, grp, invVgrp, XGgrp)
 
             if hess[j] == hess_untrunc[j] #Outcome of Armijo rule can be computed analytically
                 if j in 1:q
