@@ -212,11 +212,11 @@ R"hess_R[active_set] = pmin(pmax(hess_R[active_set],control$lower),control$upper
 R"LxGrp = splmm:::as1(XGgrp, invVgrp, active_set, g)" 
 
 @testset "hessian and cut calculation" begin
-    
+    res_iter = y - XG * βiter
     @rget hess_untrunc_R
     @test isapprox(hess_untrunc_R, hess_untrunc)
     for j in active_set
-        cut = hdmm.special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp)
+        cut = hdmm.special_quad(res_iter, XG[:,j], βiter[j], j, grp, invVgrp, XGgrp)
         R"j = $j"
         R"cut_R = splmm:::as2(XG, y, βiter_R, j, active_set, grp, LxGrp)"
         @rget cut_R
@@ -234,8 +234,10 @@ fct_old = hdmm.get_cost(ll_old, βiter[(q+1):end], "scad", λwtd[(q+1):end])
 R"cut = rep(0, p+q)"
 println("Current value of  βiter is $(βiter)")
 println("Current function value is $(fct_old)")
+res_iter = y - XG * βiter
+βold = copy(βiter)
 for j in active_set
-    cut = hdmm.special_quad(XG, y, βiter, j, invVgrp, XGgrp, grp)
+    cut = hdmm.special_quad(res_iter, XG[:,j], βiter[j], j, grp, invVgrp, XGgrp)
     R"cut[$j] = $cut"
     arm = hdmm.armijo!(XGgrp, ygrp, invVgrp, βiter, 
     j, q, cut, hess_untrunc[j], hess[j], 
@@ -245,6 +247,7 @@ for j in active_set
     if arm.arm_con == 1
         @warn "Armijo did not converge"
     end
+    res_iter .-= (βiter[j] - βold[j])*XG[:, j] 
 end
 
 #splmm's armijo has bug in calculating deltak for SCAD penalty so we use lmmSCAD's to check
