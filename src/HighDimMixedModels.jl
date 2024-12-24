@@ -124,8 +124,19 @@ function hdmm(
         @assert length(init_coef) == 3 "init_coef must be of length 3"
         @assert init_coef.β isa Vector{Real} "init_coef.β must be a vector of reals"
         @assert length(init_coef.β) == q + p "init_coef.β must be of length q + p"
-        @assert init_coef.L isa Real "init_coef.L must be a real number"
-        @assert init_coef.L > 0 "init_coef.L must be positive"
+        if ψstr == "ident"
+            @assert init_coef.L isa Real "init_coef.L must be a real number"
+            @assert init_coef.L > 0 "init_coef.L must be positive"
+        elseif ψstr == "diag"
+            @assert init_coef.L isa Vector{Real} "init_coef.L must be a vector of reals"
+            @assert length(init_coef.L) == m "init_coef.L must be of length m"
+            @assert all(init_coef.L .> 0) "entries of init_coef.L must be positive"
+        elseif ψstr == "sym"
+            @assert init_coef.L isa Matrix{Real} "init_coef.L must be a matrix of reals"
+            @assert size(init_coef.L) == (m, m) "init_coef.L must be of size m by m"
+            @assert all(diag(init_coef.L) .> 0) "diagonal entries of init_coef.L must be positive"
+            @assert istril(init_coef.L) "init_coef.L must be lower triangular"
+        end
         @assert init_coef.σ² isa Real "init_coef.σ² must be a real number"
         @assert init_coef.σ² > 0 "init_coef.σ² must be positive"
     end
@@ -133,7 +144,7 @@ function hdmm(
     # --- Introductory allocations ----------------
     # ---------------------------------------------
 
-    #Standardize penalized design matrices G if so desired
+    #Standardize penalized design matrix G if so desired
     if standardize
         meansG = mean(G, dims = 1)
         sdsG = std(G, dims = 1)
@@ -155,15 +166,29 @@ function hdmm(
     # --- Initialize parameters -------------------
     # ---------------------------------------------
     if init_coef === nothing
-        #Initialize fixed effect parameters using standard, cross-validated Lasso which ignores random effects
-        lassopath = Lasso.fit(
-            Lasso.LassoModel,
-            XG[:, 2:end], #Function for LASSO fitting accepts design matrix without intercept column and assumes you want intercept fit
-            y;
-            maxncoef = max(2 * N, 2 * p), #See https://github.com/JuliaStats/Lasso.jl/issues/54
-            penalty_factor = [zeros(q - 1); 1 ./ wts], # Don't penalize first q-1 covariates (q-1 because intercept has been removed)
-            select = Lasso.MinCVmse(Kfold(N, 10)), # Use cross-validation to select λ
-        )
+        #Initialize fixed effect parameters using standard Lasso which ignores random effects
+        # First select λ using cross-validation.
+        # If error occurs, it's due to rank deficiency in X for given training set;
+        # In this case, select λ based on BIC
+        try
+            lassopath = Lasso.fit(
+                Lasso.LassoModel,
+                XG[:, 2:end], #Function for LASSO fitting accepts design matrix without intercept column and assumes you want intercept fit
+                y;
+                maxncoef = max(2 * N, 2 * p), #See https://github.com/JuliaStats/Lasso.jl/issues/54
+                penalty_factor = [zeros(q - 1); 1 ./ wts], # Don't penalize first q-1 covariates (q-1 because intercept has been removed)
+                select = Lasso.MinCVmse(Kfold(N, 10)), # Use cross-validation to select λ
+            )
+        catch
+            lassopath = Lasso.fit(
+                Lasso.LassoModel,
+                XG[:, 2:end],
+                y;
+                maxncoef = max(2 * N, 2 * p),
+                penalty_factor = [zeros(q - 1); 1 ./ wts],
+                select = Lasso.MinBIC(),
+            )
+        end
         βstart = Lasso.coef(lassopath)
         #Initialize covariance parameters
         Lstart, σ²start = cov_start(XGgrp, ygrp, Zgrp, βstart)
