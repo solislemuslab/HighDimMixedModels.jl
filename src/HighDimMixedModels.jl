@@ -170,23 +170,23 @@ function hdmm(
         # First select λ using cross-validation.
         # If error occurs, it's due to rank deficiency in X for given training set;
         # In this case, select λ based on BIC
-        try
-            lassopath = Lasso.fit(
+        lassopath = try
+            Lasso.fit(
                 Lasso.LassoModel,
                 XG[:, 2:end], #Function for LASSO fitting accepts design matrix without intercept column and assumes you want intercept fit
                 y;
-                maxncoef = max(2 * N, 2 * p), #See https://github.com/JuliaStats/Lasso.jl/issues/54
-                penalty_factor = [zeros(q - 1); 1 ./ wts], # Don't penalize first q-1 covariates (q-1 because intercept has been removed)
-                select = Lasso.MinCVmse(Kfold(N, 10)), # Use cross-validation to select λ
+                maxncoef=max(2 * N, 2 * p), #See https://github.com/JuliaStats/Lasso.jl/issues/54
+                penalty_factor=[zeros(q - 1); 1 ./ wts], # Don't penalize first q-1 covariates (q-1 because intercept has been removed)
+                select=Lasso.MinCVmse(Kfold(N, 10)), # Use cross-validation to select λ
             )
         catch
-            lassopath = Lasso.fit(
+            Lasso.fit(
                 Lasso.LassoModel,
                 XG[:, 2:end],
                 y;
-                maxncoef = max(2 * N, 2 * p),
-                penalty_factor = [zeros(q - 1); 1 ./ wts],
-                select = Lasso.MinBIC(),
+                maxncoef=max(2 * N, 2 * p),
+                penalty_factor=[zeros(q - 1); 1 ./ wts],
+                select=Lasso.MinBIC(),
             )
         end
         βstart = Lasso.coef(lassopath)
