@@ -38,7 +38,7 @@ algorithm and return a fitted model of type `HDMModel`.
 - `Z=X`: Random effects design matrix (N by m), should contain some subset of the columns of `X` (defaults to equal `X`)
 Keyword: 
 - `penalty::String="scad"`: Either "scad" or "lasso"
-- `standardize::Bool=true`: Whether to standardize the columns of all design matrices before performing coordinate descent. The value of `λ` (and `wts`) should be chosen accordingly. Estimates will be returned to the original scale at the end.
+- `standardize::Bool=true`: Whether to standardize the columns of `G` before fitting. The value of `λ` (and `wts`) should be chosen accordingly. Coefficient estimates are returned on the original scale.
 - `λ::Real=10.0`: Positive number providing the regularization parameter for the penalty
 - `wts::Union{Vector,Nothing}=nothing`: If specified, the penalty on covariate j will be λ/wⱼ, so this argument is useful if you want to penalize some covariates more than others. 
 - `scada::Real=3.7`: Positive number providing the extra tuning parameter for the scad penalty (ignored for lasso)
