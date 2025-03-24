@@ -32,10 +32,14 @@ We welcome contributions. User who are interested in contributing code are asked
 
 If you use `HighDimMixedModels.jl` in your work, we kindly ask that you cite 
 ```
-@article{Gorstein2024,
-author = {Gorstein, E. and Aghdam, R. and Sol'{i}s-Lemus, C.},
-year = {2024},
-title = {{HighDimMixedModels.jl: Robust High Dimensional Mixed Models across Omics Data}},
-journal = {bioRxiv}
+@article{gorstein2025highdimmixedmodels,
+  title={HighDimMixedModels. jl: Robust high-dimensional mixed-effects models across omics data},
+  author={Gorstein, Evan and Aghdam, Rosa and Sol{\'\i}s-Lemus, Claudia},
+  journal={PLOS Computational Biology},
+  volume={21},
+  number={1},
+  pages={e1012143},
+  year={2025},
+  publisher={Public Library of Science San Francisco, CA USA}
 }
 ```
