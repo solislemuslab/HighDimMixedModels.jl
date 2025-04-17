@@ -90,27 +90,27 @@ function hdmm(
     # ---------------------------------------------
 
     #Dimension compatability checks
-    @assert size(G, 1) == N "G and y incompatable dimension"
-    @assert size(X, 1) == N "X and y incompatable dimension"
-    @assert size(Z, 1) == N "Z and y incompatable dimension"
-    @assert length(grp) == N "grp and y incompatable dimension"
-    @assert g > 1 "Only one group, no covariance parameters can be estimated"
+    size(G, 1) == N || throw(ArgumentError("G and y incompatable dimension"))
+    size(X, 1) == N || throw(ArgumentError("X and y incompatable dimension"))
+    size(Z, 1) == N || throw(ArgumentError("Z and y incompatable dimension"))
+    length(grp) == N || throw(ArgumentError("grp and y incompatable dimension"))
+    g > 1 || throw(ArgumentError("Only one group, no covariance parameters can be estimated"))
 
     #Intercept included check
-    @assert X[:, 1] == ones(N) "First column of X must be all ones"
+    X[:, 1] == ones(N) || throw(ArgumentError("First column of X must be all ones"))
     Z_int = (Z[:, 1] == ones(N)) #Bool for whether Z includes intercept (i.e. whether we want random intercepts)
 
     #Penalty related checks
-    @assert penalty in ["scad", "lasso"] "penalty must be one of \"scad\" or \"lasso\""
-    @assert λ > 0 "λ is regularization parameter, must be positive"
-    @assert scada > 0 "scada is regularization parameter, must be positive"
+    penalty in ["scad", "lasso"] || throw(ArgumentError("penalty must be one of \"scad\" or \"lasso\""))
+    λ > 0 || throw(ArgumentError("λ is regularization parameter, must be positive"))
+    scada > 0 || throw(ArgumentError("scada is regularization parameter, must be positive"))
     wts = (wts === nothing ? fill(1, p) : wts)
-    @assert all(wts .> 0) "Weights must be positive"
-    @assert length(wts) == p "Number of weights must equal number of penalized covariates"
+    all(wts .> 0) || throw(ArgumentError("Weights must be positive"))
+    length(wts) == p || throw(ArgumentError("Number of weights must equal number of penalized covariates"))
     # Create the vector of penalty parameters of length q + p, i.e. one for each fixed effect
     λwtd = [zeros(q); λ ./ wts]
-    @assert ψstr in ["ident", "diag", "sym"] "ψstr must be one of \"ident\", \"diag\", or \"sym\""
-    @assert control.optimize_method in [:Brent, :GoldenSection] "Control.optimize_method must be one of :Brent or :GoldenSection"
+    ψstr in ["ident", "diag", "sym"] || throw(ArgumentError("ψstr must be one of \"ident\", \"diag\", or \"sym\""))
+    control.optimize_method in [:Brent, :GoldenSection] || throw(ArgumentError("Control.optimize_method must be one of :Brent or :GoldenSection"))
     # Warn about behavior of cost function when using SCAD penalty
     if control.trace && penalty == "scad"
         printstyled("""
@@ -121,24 +121,24 @@ function hdmm(
 
     #Check that initial coefficients, if provided, make sense
     if init_coef !== nothing
-        @assert length(init_coef) == 3 "init_coef must be of length 3"
-        @assert init_coef.β isa Vector{Real} "init_coef.β must be a vector of reals"
-        @assert length(init_coef.β) == q + p "init_coef.β must be of length q + p"
+        length(init_coef) == 3 || throw(ArgumentError("init_coef must be of length 3"))
+        init_coef.β isa Vector{Real} || throw(ArgumentError("init_coef.β must be a vector of reals"))
+        length(init_coef.β) == q + p || throw(ArgumentError("init_coef.β must be of length q + p"))
         if ψstr == "ident"
-            @assert init_coef.L isa Real "init_coef.L must be a real number"
-            @assert init_coef.L > 0 "init_coef.L must be positive"
+            init_coef.L isa Real || throw(ArgumentError("init_coef.L must be a real number"))
+            init_coef.L > 0 || throw(ArgumentError("init_coef.L must be positive"))
         elseif ψstr == "diag"
-            @assert init_coef.L isa Vector{Real} "init_coef.L must be a vector of reals"
-            @assert length(init_coef.L) == m "init_coef.L must be of length m"
-            @assert all(init_coef.L .> 0) "entries of init_coef.L must be positive"
+            init_coef.L isa Vector{Real} || throw(ArgumentError("init_coef.L must be a vector of reals"))
+            length(init_coef.L) == m || throw(ArgumentError("init_coef.L must be of length m"))
+            all(init_coef.L .> 0) || throw(ArgumentError("entries of init_coef.L must be positive"))
         elseif ψstr == "sym"
-            @assert init_coef.L isa Matrix{Real} "init_coef.L must be a matrix of reals"
-            @assert size(init_coef.L) == (m, m) "init_coef.L must be of size m by m"
-            @assert all(diag(init_coef.L) .> 0) "diagonal entries of init_coef.L must be positive"
-            @assert istril(init_coef.L) "init_coef.L must be lower triangular"
+            init_coef.L isa Matrix{Real} || throw(ArgumentError("init_coef.L must be a matrix of reals"))
+            size(init_coef.L) == (m, m) || throw(ArgumentError("init_coef.L must be of size m by m"))
+            all(diag(init_coef.L) .> 0) || throw(ArgumentError("diagonal entries of init_coef.L must be positive"))
+            istril(init_coef.L) || throw(ArgumentError("init_coef.L must be lower triangular"))
         end
-        @assert init_coef.σ² isa Real "init_coef.σ² must be a real number"
-        @assert init_coef.σ² > 0 "init_coef.σ² must be positive"
+        init_coef.σ² isa Real || throw(ArgumentError("init_coef.σ² must be a real number"))
+        init_coef.σ² > 0 || throw(ArgumentError("init_coef.σ² must be positive"))
     end
 
     # --- Introductory allocations ----------------
